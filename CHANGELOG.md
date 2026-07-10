@@ -2,6 +2,15 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.1.2] — 2026-07-11
+
+### Fixed
+- `scout` could not run `git`/lint/typecheck gates: it had read-only FILE tools
+  but no Bash, while the orchestrator delegates read-only command execution to
+  it. Gave scout `Bash` for inspection (and explicitly denied Edit/Write/
+  NotebookEdit so it stays recon-only). Reported from real use on a second
+  machine ("Scout couldn't run git — read-only, no shell").
+
 ## [0.1.1] — 2026-07-11
 
 ### Changed
