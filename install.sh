@@ -1,33 +1,50 @@
 #!/usr/bin/env bash
 # TokenWise installer / migrator.
 #
-# Does the two things a Claude Code plugin CANNOT do for itself, and cleans up
-# any previous MANUAL install of this framework:
+# Installs the plugin (marketplace + plugin via the `claude` CLI) AND does the
+# two things a Claude Code plugin cannot do for itself:
 #   1. sets the main-thread agent to tokenwise:orchestrator (the strict, no
 #      Edit/Write/Bash lead) in ~/.claude/settings.json
 #   2. adds the Opus/Fable "ask before spawning" permission backstop
-#   3. removes legacy hand-installed agent files + hook + settings hooks that
-#      the plugin now provides (so nothing double-fires)
+# It also migrates away any previous MANUAL install of this framework (moves the
+# hand-installed agent files + hook aside and strips the duplicated settings
+# hooks the plugin now provides). Safe on a fresh machine (legacy steps no-op).
 #
-# It does NOT install the plugin package itself — run the /plugin commands it
-# prints at the end. Safe to run on a fresh machine (no legacy = no-op cleanup).
+# The plugin path is derived from this script's own location — no path to fill in.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 SETTINGS="$CLAUDE_DIR/settings.json"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$CLAUDE_DIR/.tokenwise-legacy-backup-$STAMP"
 
 echo "TokenWise installer"
+echo "  plugin dir: $SCRIPT_DIR"
 echo "  config dir: $CLAUDE_DIR"
 
-# 1. back up settings.json
+# 1. install the plugin package via the claude CLI (derived path, idempotent)
+if command -v claude >/dev/null 2>&1; then
+  echo "  validating manifest..."
+  claude plugin validate "$SCRIPT_DIR" || echo "  (validate reported issues — continuing)"
+  echo "  adding marketplace from this repo..."
+  claude plugin marketplace add "$SCRIPT_DIR" || echo "  (marketplace already added — continuing)"
+  echo "  installing tokenwise@tokenwise-marketplace..."
+  claude plugin install tokenwise@tokenwise-marketplace \
+    || { echo "  (already installed — updating instead)"; claude plugin update tokenwise@tokenwise-marketplace || true; }
+else
+  echo "  NOTE: 'claude' CLI not on PATH — install the plugin manually in Claude Code:"
+  echo "    /plugin marketplace add $SCRIPT_DIR"
+  echo "    /plugin install tokenwise@tokenwise-marketplace"
+fi
+
+# 2. back up settings.json
 if [ -f "$SETTINGS" ]; then
   cp "$SETTINGS" "$SETTINGS.tokenwise-bak-$STAMP"
   echo "  backed up settings.json -> $(basename "$SETTINGS").tokenwise-bak-$STAMP"
 fi
 
-# 2. move aside legacy manually-installed agents + hook script (plugin ships these)
+# 3. move aside legacy manually-installed agents + hook script (plugin ships these)
 mkdir -p "$BACKUP/agents"
 for a in orchestrator scout mechanic builder Explore general-purpose claude-code-guide; do
   f="$CLAUDE_DIR/agents/$a.md"
@@ -38,7 +55,7 @@ done
 rmdir "$BACKUP/agents" 2>/dev/null || true
 rmdir "$BACKUP" 2>/dev/null && echo "  (no legacy files found)" || echo "  legacy files backed up in: $(basename "$BACKUP")"
 
-# 3. patch settings.json: main-thread agent, permission backstop, strip legacy hooks
+# 4. patch settings.json: main-thread agent, permission backstop, strip legacy hooks
 if [ -f "$SETTINGS" ]; then
   command -v jq >/dev/null || { echo "  ERROR: jq required to patch settings.json"; exit 1; }
   tmp="$(mktemp)"
@@ -61,10 +78,7 @@ fi
 
 cat <<'EOF'
 
-Next — install the plugin package itself (in Claude Code):
-  /plugin marketplace add <path-or-git-url-to-this-tokenwise repo>
-  /plugin install tokenwise@tokenwise-marketplace
-Then restart Claude Code (the main-thread agent loads at startup).
+Done. Restart Claude Code so the main-thread agent loads at startup.
 
 Verify:
   claude -p --agent tokenwise:orchestrator "List your exact tool names."

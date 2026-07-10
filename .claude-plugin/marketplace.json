@@ -1,11 +1,16 @@
 {
   "name": "tokenwise-marketplace",
-  "owner": { "name": "narehart" },
+  "owner": {
+    "name": "narehart"
+  },
   "plugins": [
     {
       "name": "tokenwise",
       "source": "./",
       "description": "Strict cost-tiered agent delegation framework (orchestrator + tiered sub-agents + model-pinning hook)."
     }
-  ]
+  ],
+  "metadata": {
+    "description": "Strict cost-tiered agent delegation: orchestrator + tiered sub-agents + model-pinning hook."
+  }
 }

@@ -9,6 +9,13 @@ SETTINGS="$CLAUDE_DIR/settings.json"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 echo "TokenWise uninstaller"
+
+# remove the plugin package + marketplace via the claude CLI (idempotent)
+if command -v claude >/dev/null 2>&1; then
+  claude plugin uninstall tokenwise@tokenwise-marketplace || echo "  (plugin not installed — continuing)"
+  claude plugin marketplace remove tokenwise-marketplace || echo "  (marketplace not present — continuing)"
+fi
+
 if [ -f "$SETTINGS" ]; then
   command -v jq >/dev/null || { echo "  ERROR: jq required"; exit 1; }
   cp "$SETTINGS" "$SETTINGS.tokenwise-bak-$STAMP"
@@ -26,7 +33,7 @@ if [ -f "$SETTINGS" ]; then
 fi
 cat <<'EOF'
 
-Also remove the plugin package (in Claude Code):
-  /plugin uninstall tokenwise@tokenwise-marketplace
 Then restart Claude Code. The main thread returns to the default (unrestricted) agent.
+(If the `claude` CLI was unavailable above, also run in Claude Code:
+  /plugin uninstall tokenwise@tokenwise-marketplace )
 EOF

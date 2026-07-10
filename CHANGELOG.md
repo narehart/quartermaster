@@ -2,6 +2,14 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.1.1] — 2026-07-11
+
+### Changed
+- `install.sh` now installs the plugin itself via the `claude` CLI
+  (`plugin validate` + `plugin marketplace add` + `plugin install`) and derives
+  the repo path from its own location — no path to fill in. `uninstall.sh`
+  likewise removes the plugin + marketplace via the CLI.
+
 ## [0.1.0] — 2026-07-11
 
 First packaged release — the strict delegation framework as a Claude Code plugin.
