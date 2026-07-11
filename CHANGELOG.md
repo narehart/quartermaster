@@ -2,6 +2,33 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.2.0] — 2026-07-11
+
+### Added — MCP tool tiering
+- MCP tools are now classified read/write and tiered like everything else:
+  read tools -> scout, write tools -> mechanic, orchestrator holds none and
+  delegates (an MCP call is I/O = execution). Unblocks Linear and repairs
+  MCP-dependent skills that the v0.1.x orchestrator allowlist was silently
+  blocking.
+- `scripts/classify-mcp.py`: hybrid enumerator — deterministic MCP `tools/list`
+  over stdio (launched WITH each server's configured env, so API-key servers
+  like naver work; uses readOnlyHint/destructiveHint annotations) + an
+  authenticated headless `claude -p` pass that reaches OAuth/remote servers
+  (Google Drive, Linear connectors) the standalone probe can't. Caches on the
+  set of configured servers (one Haiku call only when servers change), guards
+  against SessionStart reentrancy, writes ~/.claude/tokenwise/TOOL-ROUTING.md.
+- Agents are now GENERATED into ~/.claude/agents/ from templates (so MCP grants
+  can be written into their static frontmatter), regenerated at SessionStart.
+  Plugin ships templates + scripts + hooks, not namespaced agents.
+- `mcp-policy.example.json`: optional per-server/per-tool overrides.
+
+### Changed
+- Plugin restructured from "provides namespaced agents" to
+  "generates bare-named agents"; install.sh now runs the generator.
+
+### Notes
+- OAuth servers CAN be enumerated (via the authed headless pass); only the
+  standalone protocol probe can't. Hybrid covers both.
 ## [0.1.3] — 2026-07-11
 
 ### Changed

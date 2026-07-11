@@ -1,82 +1,77 @@
 # TokenWise
 
-**Strict cost-tiered agent delegation for Claude Code.** A tool-restricted
-orchestrator runs your main session and *cannot implement anything itself* — no
-`Edit`, `Write`, or `Bash`. It plans, reviews, and delegates every bit of
-execution to cheap tiered sub-agents, and a hook hard-pins each sub-agent's
-model so nothing silently runs on the expensive session model.
+**Strict cost-tiered agent delegation for Claude Code, now with MCP tool tiering.**
 
-The problem it fixes: told-to-delegate-but-doesn't. Soft instructions ("you are
-an orchestrator, delegate") are reliably ignored — the expensive model just does
-the work inline ("just this one small edit"). TokenWise makes delegation
-**structural**: the orchestrator literally lacks the tools to implement, so it
-has to hand off.
+A tool-restricted orchestrator runs your main session and *cannot implement
+anything itself* — no `Edit`/`Write`/`Bash`, and no MCP tools. It plans,
+reviews, and delegates every bit of execution to cheap tiered sub-agents. MCP
+tools are tiered the same way: reads to a cheap recon agent, writes to the
+execution agent — because an MCP call is I/O, which the expensive orchestrator
+shouldn't be doing either.
 
-## What's inside
+## Tiers
 
-- `agents/orchestrator.md` — the delegation-only lead (`tools: Read, Grep, Glob,
-  Agent, Skill, WebFetch, WebSearch`; runs at the session model via `inherit`).
-- `agents/scout.md` (Haiku) — read-only recon, searches, "run X and report".
-- `agents/mechanic.md` (Haiku) — precisely-specified mechanical edits + commands.
-- `agents/builder.md` (Sonnet) — well-specified implementation, tests, fixes.
-- `hooks/hooks.json` + `scripts/enforce-agent-model.py` — pins every sub-agent's
-  model (incl. the built-in `Explore`/`general-purpose`/`claude-code-guide` so
-  they stop inheriting the session model), a SessionStart tripwire for the
-  `CLAUDE_CODE_SUBAGENT_MODEL` override, and SubagentStart/Stop logging to
-  `~/.claude/logs/` (feeds an "active subagents" status line if you use one).
-- `install.sh` / `uninstall.sh` — do the two things a plugin can't (set the
-  main-thread `agent`, add the Opus/Fable permission backstop) and migrate away
-  any previous manual install.
+| Agent | Model | Holds |
+|---|---|---|
+| **orchestrator** (main thread) | inherit (your session model) | Read/Grep/Glob/Agent/Skill/WebFetch/WebSearch. **No** Edit/Write/Bash, **no** MCP. Delegates everything. |
+| **scout** | Haiku | read-only file/code recon + **read-only MCP tools** (list/search/get) |
+| **mechanic** | Haiku | shell + mechanical edits + **write MCP tools** (create/update/send/delete) |
+| **builder** | Sonnet | well-specified implementation, tests, diagnosed fixes |
+
+The orchestrator reads `~/.claude/tokenwise/TOOL-ROUTING.md` to know which tier
+holds which server's tools.
+
+## How MCP tiering works
+
+`scripts/classify-mcp.py` enumerates and classifies every MCP tool, then writes
+the read tools into scout and the write tools into mechanic:
+
+- **stdio servers** (incl. API-key ones like naver): enumerated deterministically
+  by speaking the MCP `tools/list` protocol, launched with each server's
+  configured env; classified via `readOnlyHint`/`destructiveHint` annotations
+  then name heuristics.
+- **OAuth / remote servers** (Google Drive, Linear connectors, …): enumerated via
+  an authenticated headless `claude -p` pass — the only path that has the live
+  tokens. (A standalone probe can't auth them; headless can.)
+
+It re-runs at **SessionStart**, but only does the (Haiku) enumeration call when
+your set of MCP servers actually changed — otherwise it regenerates agents from
+cache. Add or remove an MCP server and the tiering updates itself.
+
+Optional `~/.claude/tokenwise/mcp-policy.json` (see `mcp-policy.example.json`)
+overrides any classification — split a server, move it, or skip it. Not required.
 
 ## Install
 
-Two parts: the plugin package, and the settings a plugin can't set.
-
 ```bash
-# 1. the settings + legacy migration (safe to run on a fresh machine)
-bash install.sh
+bash install.sh     # installs the plugin via `claude plugin …`, generates the
+                    # agents into ~/.claude/agents, sets the main-thread agent +
+                    # permission backstop, migrates any prior manual install
+# restart Claude Code
+```
+`install.sh` derives its own path and is safe on a fresh machine. First run does
+one headless MCP-classification pass (a minute if you have MCP servers).
 
-# 2. the plugin package, inside Claude Code:
-/plugin marketplace add /path/to/this/tokenwise            # or a git URL
-/plugin install tokenwise@tokenwise-marketplace
-# restart Claude Code — the main-thread agent loads at startup
+Verify:
+```bash
+claude -p --agent orchestrator "List your exact tool names."   # no Edit/Write/Bash
+cat ~/.claude/tokenwise/TOOL-ROUTING.md                         # per-server tiering
 ```
 
-Verify it's strict:
-```bash
-claude -p --agent tokenwise:orchestrator "List your exact tool names."
-# expect: Read, Grep, Glob, Agent, Skill, WebFetch, WebSearch — NO Edit/Write/Bash
-```
-
-## Upgrade
+## Upgrade / uninstall
 
 ```bash
-/plugin update tokenwise@tokenwise-marketplace     # bumps to the new version, old cache cleaned by Claude Code
-/plugin marketplace update                          # refresh the marketplace first if needed
-```
-Versions are tagged in git; `plugin.json` `version` gates when users are offered
-the update. Re-run `bash install.sh` only if a release changes the settings/hooks
-contract (see CHANGELOG).
-
-## Uninstall
-
-```bash
-bash uninstall.sh                                   # reverts agent + permission settings
-/plugin uninstall tokenwise@tokenwise-marketplace   # removes the package
-# restart — main thread returns to the default unrestricted agent
+claude plugin update tokenwise@tokenwise-marketplace   # or re-run install.sh
+bash uninstall.sh                                       # reverts settings + removes plugin
 ```
 
 ## Notes & caveats
 
-- **Escape hatch:** for a session where you want to drive hands-on, launch
-  `claude --agent claude` — that restores Edit/Write/Bash for that session only.
-- **Skills that write files** run in the orchestrator's context and will hit its
-  tool restriction. Run those under `claude --agent claude`, or have the
-  orchestrator delegate their execution.
-- **The tradeoff you're opting into:** every edit — even a one-liner — routes
-  through a sub-agent. That's slower and costs more on trivial tasks; it's the
-  price of the guarantee that the orchestrator never over-works. Realistic net
-  savings on real workloads are ~30%, not 5–10× — delegation is a
-  context-preservation tool first, a cost tool second.
-- Keep the orchestrator → scout/mechanic/builder hierarchy flat; the leaf agents
-  have `disallowedTools: Agent, Task, Workflow` so they can't recurse.
+- **Escape hatch:** `claude --agent claude` gives an unrestricted session (all
+  tools incl. MCP) when you want to drive hands-on.
+- **Enumeration is model-assisted for OAuth servers**, so an occasional miss is
+  possible; the routing table flags any *connected* server that came back empty
+  so you can re-run or add a policy entry. stdio servers are deterministic.
+- **The tradeoff:** every edit and every MCP call routes through a sub-agent.
+  Slower on trivial tasks; the point is the orchestrator never over-works.
+- Leaf agents have `disallowedTools: Agent, Task, Workflow` — no recursion.
