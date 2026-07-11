@@ -60,7 +60,7 @@ rmdir "$BACKUP" 2>/dev/null && echo "  (no legacy files found)" || echo "  legac
 #     headless enumeration if you have MCP servers, so it can take a minute.
 if command -v python3 >/dev/null 2>&1; then
   echo "  generating agents + classifying MCP tools (may take a minute if you have MCP servers)..."
-  python3 "$SCRIPT_DIR/scripts/classify-mcp.py" --templates "$SCRIPT_DIR/templates" --agents "$CLAUDE_DIR/agents" || \
+  python3 "$SCRIPT_DIR/scripts/classify-mcp.py" --templates "$SCRIPT_DIR/templates" --agents "$CLAUDE_DIR/agents" --force || \
     echo "  (classifier had trouble — agents still generated from templates; re-runs at each SessionStart)"
 else
   echo "  WARNING: python3 not found — agents not generated; install python3 and re-run."

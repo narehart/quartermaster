@@ -2,6 +2,18 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.3.1] — 2026-07-11
+
+### Fixed
+- `install.sh` now runs the classifier with `--force`, so a (re)install always
+  re-classifies instead of taking a stale cache hit — you no longer have to
+  run `classify-mcp.py --force` by hand after installing.
+- Classifier self-heals an incomplete cache: on a cache-hash hit it now checks
+  that every currently-Connected server has at least one cached tool; if a
+  Connected server has zero (a poisoned/incomplete cache written under a hash
+  that looks current), it re-enumerates instead of reusing. So SessionStart
+  recovers on its own, not just installs.
+
 ## [0.3.0] — 2026-07-11
 
 ### Changed — deterministic MCP enumeration

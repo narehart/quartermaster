@@ -575,8 +575,18 @@ def main():
 
     tools = None
     needs_auth = cache.get("needs_auth", [])
-    if "--force" not in sys.argv and cache.get("hash") == h and cache.get("tools"):
-        tools = cache["tools"]          # servers unchanged -> reuse (no re-enumeration)
+    cached_tools = cache.get("tools")
+    # A cache hit (unchanged hash) is only trustworthy if every server CURRENTLY
+    # Connected actually has at least one tool in the cached set. Without this,
+    # a cache poisoned earlier (e.g. a server enumerated as Connected before its
+    # tools finished loading) would match the current hash forever and never
+    # self-heal -- SessionStart would keep reusing a zero-tool grant for a
+    # server that's actually fine. A server that's needs-auth/failed/connecting
+    # with zero cached tools is NOT stale -- that's expected -- so this only
+    # checks servers status_category()=="connected" right now.
+    stale_cache = bool(cached_tools) and bool(incomplete_connected_servers(servers, cached_tools))
+    if "--force" not in sys.argv and cache.get("hash") == h and cached_tools and not stale_cache:
+        tools = cached_tools             # servers unchanged -> reuse (no re-enumeration)
     else:
         statuses = wait_for_settled()   # don't enumerate while servers are still connecting
         h, servers = server_hash(statuses)  # re-key the cache off the SETTLED status, not the
