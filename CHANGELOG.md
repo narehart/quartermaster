@@ -2,6 +2,19 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.1.3] — 2026-07-11
+
+### Changed
+- Cleaner tier split instead of giving scout blanket Bash (v0.1.2). scout is now
+  read-only file/code recon with NO shell (Bash explicitly denied); command
+  execution — git, lint/typecheck/test gates, "run X and report" — routes to
+  **mechanic**, which already has Bash and owns scripted commands. Fixes the
+  "scout couldn't run git" case without handing a recon agent an unrestricted
+  shell (scoped Bash in `tools` isn't a real restriction, and hooks don't fire
+  inside sub-agents, so shell-free + route-to-mechanic is the enforceable design).
+- orchestrator prompt repointed: read-only command inspection goes to mechanic;
+  scout gets only read-the-files work.
+
 ## [0.1.2] — 2026-07-11
 
 ### Fixed
