@@ -2,7 +2,7 @@
   "name": "tokenwise",
   "displayName": "TokenWise",
   "description": "Strict cost-tiered agent delegation. A tool-restricted orchestrator that cannot implement directly (no Edit/Write/Bash) delegates all execution to cheap tiered sub-agents (scout/mechanic on Haiku, builder on Sonnet), with a hook that hard-pins every sub-agent's model so nothing silently inherits the expensive session model.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "author": {
     "name": "narehart"
   },

@@ -61,24 +61,58 @@ def run(cmd, timeout=180, env=None):
     except Exception:
         return ""
 
-def server_hash():
-    """Hash just the set of configured server names (ignore transient health)."""
-    out = run(["claude","mcp","list"], timeout=30)
-    servers = sorted(set(re.findall(r'^([A-Za-z0-9._-]+):', out, re.M)) - {"Checking"})
-    return hashlib.sha256("\n".join(servers).encode()).hexdigest(), servers
+SERVER_LINE_RE = re.compile(r'^(.+?):\s.+\s-\s+(.+)$')
 
-def parse_mcp_list():
-    """{display_name: status_text} from `claude mcp list`, e.g.
+def parse_mcp_servers(text=None):
+    """The SINGLE source of truth for parsing `claude mcp list` output. Returns
+    an ordered list of {"name": <server id>, "status": <raw status text>}, e.g.
     'claude.ai Google Drive: https://... - ✔ Connected' ->
-    {'claude.ai Google Drive': '✔ Connected'}. Display names may contain
-    spaces/dots, so split on ': ' + ' - ' rather than assuming a charset."""
-    out = run(["claude","mcp","list"], timeout=30)
-    statuses = {}
-    for line in out.splitlines():
-        m = re.match(r'^(.+?):\s.+\s-\s+(.+)$', line.strip())
+        {"name": "claude.ai Google Drive", "status": "✔ Connected"}
+    'plugin:slack:slack: https://mcp.slack.com/mcp (HTTP) - ! Needs authentication' ->
+        {"name": "plugin:slack:slack", "status": "! Needs authentication"}
+    Server ids/display names are NOT restricted to a safe charset -- they may
+    contain colons (plugin-provided servers like `plugin:slack:slack`) or
+    spaces/dots (`claude.ai Google Drive`) -- so we never match on a name
+    charset. Instead we rely on the fixed shape `claude mcp list` always
+    emits: "<name>: <target> - <status>", where the LAST ": " before the
+    target is the delimiter (any colons inside the name itself are never
+    followed by whitespace, since only the final one -- before the target --
+    is), and the last " - " before the status. Every caller that needs
+    server identity/status MUST go through this function; do not re-parse
+    `claude mcp list` ad hoc elsewhere."""
+    if text is None:
+        text = run(["claude","mcp","list"], timeout=30)
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = SERVER_LINE_RE.match(line)
         if m:
-            statuses[m.group(1).strip()] = m.group(2).strip()
-    return statuses
+            out.append({"name": m.group(1).strip(), "status": m.group(2).strip()})
+    return out
+
+def status_category(status):
+    """Bucket a raw status string (e.g. '! Needs authentication') into one of:
+    connected / needs authentication / connecting / failed / other. 'Checking'
+    (the transient pre-poll state) buckets as connecting."""
+    s = (status or "").lower()
+    if "authenticat" in s: return "needs authentication"
+    if "fail" in s: return "failed"
+    if "connected" in s: return "connected"
+    if "connect" in s or "checking" in s: return "connecting"
+    return "other"
+
+def server_hash(servers=None):
+    """Hash configured server NAME+STATUS pairs -- not just names. A server
+    going Needs-authentication -> Connected (e.g. the user just authorized
+    Slack via /mcp) does not change the set of server names, but it MUST
+    change this hash so the next classify run treats it as changed and
+    re-enumerates instead of silently reusing the stale (zero-tool) cache."""
+    if servers is None:
+        servers = parse_mcp_servers()
+    key = sorted(f"{s['name']}\x01{s['status']}" for s in servers)
+    return hashlib.sha256("\n".join(key).encode()).hexdigest(), servers
 
 def wait_for_settled(timeout=CONNECT_TIMEOUT, interval=CONNECT_POLL_INTERVAL, confirm=2):
     """Poll `claude mcp list` until every server it reports has a terminal
@@ -93,27 +127,27 @@ def wait_for_settled(timeout=CONNECT_TIMEOUT, interval=CONNECT_POLL_INTERVAL, co
     deadline = time.time() + timeout
     prev_names = None
     stable_hits = 0
-    statuses = {}
+    servers = []
     while True:
-        statuses = parse_mcp_list()
-        pending = {n: s for n, s in statuses.items() if not SETTLED_RE.search(s)}
-        stable = prev_names is not None and prev_names == set(statuses)
+        servers = parse_mcp_servers()
+        pending = [s for s in servers if not SETTLED_RE.search(s["status"])]
+        names = {s["name"] for s in servers}
+        stable = prev_names is not None and prev_names == names
         stable_hits = stable_hits + 1 if (not pending and stable) else 0
         if stable_hits >= confirm:
-            return statuses
+            return servers
         if time.time() >= deadline:
-            return statuses
-        prev_names = set(statuses)
+            return servers
+        prev_names = names
         time.sleep(interval)
 
 def _norm(s):
     return re.sub(r'[^a-z0-9]', '', s.lower())
 
-def connected_display_names(statuses):
+def connected_display_names(servers):
     """Servers `claude mcp list` reports as fully Connected (not needing
     auth, not failed)."""
-    return [n for n, s in statuses.items()
-            if re.search(r'connected', s, re.I) and not re.search(r'needs authentication|failed', s, re.I)]
+    return [s["name"] for s in servers if status_category(s["status"]) == "connected"]
 
 def tool_server_segments(tools):
     segs = set()
@@ -305,6 +339,10 @@ def generate_agents(assignment):
         open(os.path.join(AGENTS_DIR, base+".md"), "w").write(content)
 
 def write_routing(tools, assignment, servers):
+    """servers: list of {"name","status"} from parse_mcp_servers()/server_hash() --
+    EVERY server `claude mcp list` reports, including ones with zero enumerated
+    tools (needs-auth, still connecting, failed, or connected-but-empty). None of
+    them are silently dropped from the table."""
     os.makedirs(STATE_DIR, exist_ok=True)
     by_server = {}
     for t in tools:
@@ -317,11 +355,31 @@ def write_routing(tools, assignment, servers):
              "| Server | read→scout | write→mechanic |", "|---|---|---|"]
     for s in sorted(by_server):
         lines.append(f"| {s} | {by_server[s]['read']} | {by_server[s]['write']} |")
-    unseen = [s for s in servers if s not in by_server]
-    if unseen:
+
+    # Match each configured server (by display name / server id) to the tool
+    # segment it produced, if any -- normalizing away spaces/dots/underscores/
+    # colons so `plugin:slack:slack` matches a future `plugin_slack_slack`
+    # tool-name segment the same way `claude.ai Google Drive` already matches
+    # the `claude_ai_Google_Drive` segment.
+    norm_to_seg = {_norm(seg): seg for seg in by_server}
+    zero_tool = [s for s in servers if _norm(s["name"]) not in norm_to_seg]
+
+    if zero_tool:
         lines.append("")
-        lines.append("Configured but no tools enumerated (not authorized / not connected): "
-                     + ", ".join(unseen) + ". Authorize them, or declare a tier in mcp-policy.json.")
+        lines.append("## Configured, zero tools enumerated\n")
+        lines.append("Every configured server appears here or in the table above -- "
+                      "nothing is silently missing.\n")
+        for s in zero_tool:
+            cat = status_category(s["status"])
+            if cat == "needs authentication":
+                why = "needs authentication; authorize via /mcp then re-run the classifier"
+            elif cat == "connecting":
+                why = "still connecting; re-run the classifier once it settles"
+            elif cat == "failed":
+                why = "failed to connect; check its config/logs, then re-run the classifier"
+            else:
+                why = "no tools (connected but enumerated 0); declare a tier in mcp-policy.json if expected"
+            lines.append(f"- {s['name']} — {why}.")
     open(ROUTING, "w").write("\n".join(lines) + "\n")
 
 def main():
@@ -337,12 +395,15 @@ def main():
         tools = cache["tools"]          # servers unchanged -> reuse (no model call)
     else:
         statuses = wait_for_settled()   # don't enumerate while servers are still connecting
+        h, servers = server_hash(statuses)  # re-key the cache off the SETTLED status, not the
+                                             # mid-connect snapshot taken before we waited -- so
+                                             # the next run's hash comparison is apples-to-apples
         tools = enumerate_tools()
         for _ in range(RETRY_MAX):
             if not incomplete_connected_servers(statuses, tools):
                 break
-            time.sleep(RETRY_WAIT)      # a connected server produced 0 tools -> it likely
-            statuses = parse_mcp_list() # connected late; re-enumerate and merge in what's new
+            time.sleep(RETRY_WAIT)         # a connected server produced 0 tools -> it likely
+            statuses = parse_mcp_servers() # connected late; re-enumerate and merge in what's new
             retry_tools = enumerate_tools()
             if retry_tools:
                 tools = merge_tool_lists(tools, retry_tools)

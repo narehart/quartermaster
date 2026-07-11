@@ -2,6 +2,25 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.2.3] — 2026-07-11
+
+### Fixed
+- Server-list parser silently dropped servers whose names contain spaces or
+  colons (`claude.ai Google Drive`, `plugin:slack:slack`) — tokenwise was
+  only tracking 4 of 7 configured servers. Replaced with one robust parser
+  used everywhere; all servers now tracked.
+- Auth-gated servers (status "Needs authentication") were silently absent
+  from TOOL-ROUTING.md. They're now listed under "Configured, zero tools
+  enumerated" with the reason and the fix ("authorize via /mcp then re-run").
+- Cache key now includes each server's connection STATUS, so authenticating a
+  server (needs-auth -> connected) auto-triggers re-enumeration on the next
+  classify run instead of being masked by the name-only cache key.
+
+### Notes
+- No Claude Code hook fires on MCP OAuth/connection change (ConfigChange only
+  covers settings/skills), so after authenticating a server via /mcp you must
+  re-run `classify-mcp.py --force` or restart for it to be picked up.
+
 ## [0.2.2] — 2026-07-11
 
 ### Fixed
