@@ -1,32 +1,41 @@
 #!/usr/bin/env python3
 """TokenWise MCP classifier + agent generator.
 
-Enumerates and classifies every available MCP tool by asking an UNRESTRICTED,
-already-authenticated headless Claude session (`claude -p --agent claude`) — the
-only path that reaches OAuth/remote/plugin-provided servers, since it uses the
-live tokens. That headless enumeration is the SOURCE OF TRUTH for tool NAMES
-(exact, verbatim, runtime names — including plugin-provided servers' real
-`mcp__plugin_<plugin>_<server>__` prefix); the stdio protocol path is only ever
-trusted to synthesize a name for servers it can directly confirm the prefix of
-(plain ~/.claude.json / .mcp.json stdio servers), and otherwise only supplies
-read/write annotations. Each tool is tagged read or write, then written into
-the generated agents:
+Enumerates and classifies every available MCP tool DETERMINISTICALLY, by
+replaying `deferred_tools_delta` records that Claude Code itself writes into
+session transcripts (~/.claude/projects/<slug>/*.jsonl) — the exact, verbatim,
+runtime tool-name list it offered a session, including plugin-provided
+servers' real `mcp__plugin_<plugin>_<server>__` prefix. This is the SOURCE OF
+TRUTH for tool NAMES and requires no model call, so it can't truncate or drop
+servers the way asking a Haiku session to recite its own tool list could on a
+large (30-server) setup. The stdio protocol path only ever supplies read/write
+annotations for names transcripts (or headless, see below) already found;
+names it can't match fall back to the READ_RE/WRITE_RE name heuristics. Each
+tool is tagged read or write, then written into the generated agents:
   read  -> scout     (read-only recon tier)
   write -> mechanic  (execution tier)
 The orchestrator holds no MCP tools; it reads TOOL-ROUTING.md to route.
 
-Regenerates agents into ~/.claude/agents/ from templates on each run. Cheap:
-re-enumerates (one Haiku call) ONLY when the set of configured MCP servers
-changed since last run; otherwise regenerates from cache. Run at SessionStart
-and on install.
+Fallback: if NO transcript on disk has ever recorded a `deferred_tools_delta`
+(brand-new machine, no prior sessions), fall back to the old
+`enumerate_headless()` — asking an unrestricted, already-authenticated
+headless Claude session (`claude -p --agent claude`) to recite its own
+`mcp__*` tool list. That path is flaky at scale (the reason this file exists)
+but is the only option with zero transcript history to mine.
 
-Reentrancy: enumerating spawns `claude -p`, which fires SessionStart again — so
-this exits immediately if TOKENWISE_CLASSIFYING is set, and it sets that var for
-the child. The SessionStart hook also guards on it.
+Regenerates agents into ~/.claude/agents/ from templates on each run. Cheap:
+re-enumerates ONLY when the set of configured MCP servers changed since last
+run (transcript replay is fast — no model call in the common case; the
+headless fallback, when it's used, costs one Haiku call); otherwise
+regenerates from cache. Run at SessionStart and on install.
+
+Reentrancy: the headless fallback spawns `claude -p`, which fires SessionStart
+again — so this exits immediately if TOKENWISE_CLASSIFYING is set, and it sets
+that var for the child. The SessionStart hook also guards on it.
 
 Usage: classify-mcp.py [--templates DIR] [--agents DIR] [--force] [--print]
 """
-import json, os, re, subprocess, sys, hashlib, time
+import json, os, re, subprocess, sys, hashlib, time, glob
 
 if os.environ.get("TOKENWISE_CLASSIFYING"):
     sys.exit(0)  # reentrancy guard: we're inside the enumeration child
@@ -45,6 +54,15 @@ CONNECT_POLL_INTERVAL = 3   # seconds between `claude mcp list` polls
 CONNECT_TIMEOUT       = 60  # total seconds to wait for servers to settle
 RETRY_WAIT            = 5   # seconds to wait before re-enumerating an incomplete server
 RETRY_MAX             = 3   # max re-enumeration attempts for incomplete servers
+
+# A single session's transcript can be INCOMPLETE for a server that was still
+# connecting (or simply untouched) at that session's specific start moment --
+# the same connection race CONNECT_TIMEOUT/RETRY_* guard against for the
+# `claude mcp list`-driven paths. So transcript replay doesn't stop at the
+# single newest transcript: it keeps unioning newest-first transcripts until
+# every currently-configured server is covered, or it runs out of transcripts
+# (or hits this cap, for safety on machines with very long session history).
+TRANSCRIPT_SCAN_LIMIT = 200
 
 SETTLED_RE = re.compile(r'connected|failed|needs authentication', re.I)
 
@@ -144,6 +162,13 @@ def wait_for_settled(timeout=CONNECT_TIMEOUT, interval=CONNECT_POLL_INTERVAL, co
 def _norm(s):
     return re.sub(r'[^a-z0-9]', '', s.lower())
 
+def tool_segment(name):
+    """The server segment of a full `mcp__<server>__<tool>` name, or "" if
+    the name isn't shaped like one. Single shared helper for every place
+    that needs to map a tool name back to its server."""
+    parts = name.split("__")
+    return parts[1] if len(parts) >= 3 else ""
+
 def connected_display_names(servers):
     """Servers `claude mcp list` reports as fully Connected (not needing
     auth, not failed)."""
@@ -206,14 +231,19 @@ def load_servers():
             servers.setdefault(name, spec)
     return servers
 
+def classify_by_name(name):
+    """Name-only heuristic fallback (READ_RE/WRITE_RE) -- used for tool names
+    that transcript replay (or headless fallback) supplied but the stdio
+    protocol path couldn't confirm annotations for."""
+    if WRITE_RE.search(name): return "write"
+    if READ_RE.search(name):  return "read"
+    return "write"   # unknown -> safe (execution tier)
+
 def classify_proto(tool):
     ann = tool.get("annotations") or {}
     if ann.get("readOnlyHint") is True: return "read"
     if ann.get("destructiveHint") is True: return "write"
-    n = tool.get("name","")
-    if WRITE_RE.search(n): return "write"
-    if READ_RE.search(n):  return "read"
-    return "write"   # unknown -> safe (execution tier)
+    return classify_by_name(tool.get("name",""))
 
 def list_tools_stdio(command, args, env=None):
     """Speak MCP tools/list over stdio, launched WITH the server's env. Never raises."""
@@ -247,10 +277,109 @@ def list_tools_stdio(command, args, env=None):
         except Exception: pass
     return []
 
+def transcript_files():
+    """All session transcripts on disk, newest-modified first."""
+    files = glob.glob(os.path.join(HOME, ".claude", "projects", "*", "*.jsonl"))
+    files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return files[:TRANSCRIPT_SCAN_LIMIT]
+
+def _transcript_deferred_names(path):
+    """Replay a single transcript's `deferred_tools_delta` records IN ORDER.
+    Each record's addedNames are unioned in, removedNames pruned OUT -- both
+    scoped to THIS transcript only (a name removed in one session's replay
+    never affects another session's). Returns (mcp_names_set,
+    needs_auth_last_seen_or_None, saw_any_record_bool). Never raises -- an
+    unreadable/corrupt transcript is just treated as if it had no records."""
+    names = set()
+    needs_auth = None
+    saw_record = False
+    try:
+        with open(path, "r", errors="ignore") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                att = rec.get("attachment")
+                if not (isinstance(att, dict) and att.get("type") == "deferred_tools_delta"):
+                    continue
+                saw_record = True
+                for n in (att.get("addedNames") or []):
+                    if isinstance(n, str) and n.startswith("mcp__"):
+                        names.add(n)
+                for n in (att.get("removedNames") or []):
+                    names.discard(n)
+                na = att.get("needsAuthMcpServers")
+                if na is not None:
+                    needs_auth = na
+    except Exception:
+        return set(), None, False
+    return names, needs_auth, saw_record
+
+def enumerate_transcripts(configured_servers=None):
+    """DETERMINISTIC MCP tool-name source, no model call: Claude Code itself
+    records the exact set of `mcp__*` tool names it offered a session in
+    `deferred_tools_delta` attachments inside that session's own transcript
+    (~/.claude/projects/<slug>/*.jsonl). Replaying addedNames/removedNames in
+    order within one transcript gives that session's final deferred-tool set
+    -- exact runtime names, verbatim, including plugin-provided servers' real
+    prefix.
+
+    configured_servers (parse_mcp_servers() output, i.e. every server `claude
+    mcp list` currently reports) drives BOTH an early-exit AND a final filter:
+    we scan transcripts newest-first, UNIONING names across them (not just
+    trusting the single newest one -- see TRANSCRIPT_SCAN_LIMIT's comment for
+    why), and stop as soon as every currently-configured server's segment is
+    represented, or transcripts run out. Because scanning multiple transcripts
+    can pull in OTHER segments incidentally (a still-configured server's
+    deferred_tools_delta record sits alongside a long-gone server's in the
+    same transcript), the result is then filtered down to only segments that
+    match a currently-configured server -- so a genuinely stale server,
+    removed from config but still sitting in old transcript history, never
+    pollutes the result or gets a row in TOOL-ROUTING.md / a grant in a
+    generated agent. When configured_servers is empty/None (caller has no
+    config reference), no filter is applied.
+
+    needsAuthMcpServers is taken ONLY from the single freshest transcript
+    that recorded one, never merged across sessions -- auth state goes stale,
+    unlike tool names (a name once offered is still a real name).
+
+    Returns (sorted_name_list_or_None, needs_auth_list). None means NO
+    transcript anywhere ever recorded a deferred_tools_delta -- caller should
+    fall back to enumerate_headless()."""
+    configured_norm = {_norm(s["name"]) for s in (configured_servers or [])}
+    names = set()
+    needs_auth = None
+    needs_auth_set = False
+    any_record = False
+    for path in transcript_files():
+        t_names, t_needs_auth, saw_record = _transcript_deferred_names(path)
+        if not saw_record:
+            continue
+        any_record = True
+        names |= t_names
+        if not needs_auth_set:
+            needs_auth = t_needs_auth
+            needs_auth_set = True
+        if configured_norm:
+            segs_norm = {_norm(s) for s in tool_server_segments([{"name": n} for n in names])}
+            if configured_norm <= segs_norm:
+                break
+    if not any_record:
+        return None, (needs_auth or [])
+    if configured_norm:
+        names = {n for n in names if _norm(tool_segment(n)) in configured_norm}
+    return sorted(names), (needs_auth or [])
+
 def enumerate_headless():
-    """Authed headless Claude — the ONLY path that reaches OAuth/remote/plugin-provided
-    servers, and therefore the SOURCE OF TRUTH for tool NAMES (they must exactly match
-    the runtime names granted to generated agents)."""
+    """Authed headless Claude — FALLBACK ONLY, used when no transcript anywhere
+    has ever recorded a deferred_tools_delta. The only path that reaches
+    OAuth/remote/plugin-provided servers without transcript history, since it
+    uses the live tokens -- but flaky at scale (the reason enumerate_transcripts
+    above is the primary source)."""
     prompt = ("Output ONLY a JSON array — no prose, no markdown fence. First call ToolSearch to "
               "load any deferred MCP tools. Then for EVERY tool available to you whose name starts "
               'with "mcp__", output {"name":"<tool name>","tier":"read" or "write"}. '
@@ -271,18 +400,27 @@ def enumerate_headless():
     except Exception:
         return []
 
-def enumerate_tools():
-    """Hybrid, but with a strict trust order: headless enumeration is the ONLY source
-    of truth for tool NAMES, since it reflects real runtime names (including
-    plugin-provided servers, whose prefix is `mcp__plugin_<plugin>_<server>__`, NOT
-    `mcp__<server>__`). The stdio protocol path only ever confirms the runtime prefix
-    for servers it can directly see in ~/.claude.json / .mcp.json — those are always
-    plain stdio servers with a confirmed `mcp__<server>__` prefix (plugins declare
-    their own servers elsewhere and never appear here), so it is safe to synthesize
-    names for them. Protocol is used to (a) supply read/write annotations for tools
-    headless also reported, and (b) backfill confirmed-prefix stdio tools headless
-    missed. It NEVER overrides or supersedes a name headless actually reported, and
-    it never contributes a name for a server it can't confirm the prefix for."""
+def enumerate_tools(servers=None):
+    """Hybrid, but with a strict trust order: transcript replay
+    (enumerate_transcripts) is the PRIMARY, deterministic source of truth for
+    tool NAMES, since it reflects real runtime names Claude Code itself
+    recorded (including plugin-provided servers, whose prefix is
+    `mcp__plugin_<plugin>_<server>__`, NOT `mcp__<server>__`) with no model
+    call. The stdio protocol path only ever confirms the runtime prefix for
+    servers it can directly see in ~/.claude.json / .mcp.json — those are
+    always plain stdio servers with a confirmed `mcp__<server>__` prefix
+    (plugins declare their own servers elsewhere and never appear here), so
+    it is safe to synthesize names for them. Protocol supplies read/write
+    annotations for names transcripts (or headless) also reported; names it
+    can't match fall back to the classify_by_name heuristic. Protocol NEVER
+    overrides or supersedes a name transcripts/headless actually reported,
+    and it never contributes a name for a server it can't confirm the
+    prefix for.
+
+    enumerate_headless() (one Haiku call, flaky at scale) is used ONLY when
+    NO transcript anywhere has ever recorded a deferred_tools_delta.
+
+    Returns (tools_list_or_None, needs_auth_list)."""
     proto = {}   # full_name -> {"name","tier"}, confirmed-prefix stdio tools only
     for name, spec in load_servers().items():
         if spec.get("command"):
@@ -290,9 +428,19 @@ def enumerate_tools():
                 full = f"mcp__{name}__{t.get('name','')}"
                 proto[full] = {"name": full, "tier": classify_proto(t)}
 
-    headless = enumerate_headless()      # authoritative runtime tool NAMES
+    names, needs_auth = enumerate_transcripts(servers)
+    if names is not None:                # transcript replay -- primary, deterministic path
+        tools = {}
+        for n in names:                  # names as recorded by the runtime, verbatim
+            tier = proto[n]["tier"] if n in proto else classify_by_name(n)
+            tools[n] = {"name": n, "tier": tier}
+        for full, t in proto.items():    # backfill confirmed stdio tools transcripts missed
+            tools.setdefault(full, t)
+        return (list(tools.values()) or None), needs_auth
+
+    headless = enumerate_headless()      # last-resort fallback: no transcript history at all
     if not headless and not proto:
-        return None
+        return None, needs_auth
 
     tools = {}
     for t in headless:                   # names as reported by the runtime, verbatim
@@ -301,7 +449,7 @@ def enumerate_tools():
         tools[name] = {"name": name, "tier": tier}
     for full, t in proto.items():         # backfill confirmed stdio tools headless missed
         tools.setdefault(full, t)
-    return list(tools.values()) or None
+    return (list(tools.values()) or None), needs_auth
 
 def load_policy():
     if os.path.exists(POLICY):
@@ -338,11 +486,16 @@ def generate_agents(assignment):
                              content, count=1, flags=re.M)
         open(os.path.join(AGENTS_DIR, base+".md"), "w").write(content)
 
-def write_routing(tools, assignment, servers):
+def write_routing(tools, assignment, servers, needs_auth=None):
     """servers: list of {"name","status"} from parse_mcp_servers()/server_hash() --
     EVERY server `claude mcp list` reports, including ones with zero enumerated
     tools (needs-auth, still connecting, failed, or connected-but-empty). None of
-    them are silently dropped from the table."""
+    them are silently dropped from the table.
+    needs_auth: needsAuthMcpServers as last recorded in the freshest session
+    transcript (enumerate_transcripts) -- a second, independent needs-auth
+    signal alongside the `claude mcp list` status parse, since a server can
+    need auth in Claude Code's own view of the world (transcript) even when
+    the CLI's status line hasn't caught up yet (or vice versa)."""
     os.makedirs(STATE_DIR, exist_ok=True)
     by_server = {}
     for t in tools:
@@ -363,6 +516,7 @@ def write_routing(tools, assignment, servers):
     # the `claude_ai_Google_Drive` segment.
     norm_to_seg = {_norm(seg): seg for seg in by_server}
     zero_tool = [s for s in servers if _norm(s["name"]) not in norm_to_seg]
+    needs_auth_norm = {_norm(n) for n in (needs_auth or [])}
 
     if zero_tool:
         lines.append("")
@@ -371,8 +525,12 @@ def write_routing(tools, assignment, servers):
                       "nothing is silently missing.\n")
         for s in zero_tool:
             cat = status_category(s["status"])
+            transcript_needs_auth = _norm(s["name"]) in needs_auth_norm
             if cat == "needs authentication":
                 why = "needs authentication; authorize via /mcp then re-run the classifier"
+            elif transcript_needs_auth:
+                why = ("needs authentication per session transcript; authorize via /mcp "
+                       "then re-run the classifier")
             elif cat == "connecting":
                 why = "still connecting; re-run the classifier once it settles"
             elif cat == "failed":
@@ -380,6 +538,31 @@ def write_routing(tools, assignment, servers):
             else:
                 why = "no tools (connected but enumerated 0); declare a tier in mcp-policy.json if expected"
             lines.append(f"- {s['name']} — {why}.")
+
+    # Servers currently needing authentication that ALREADY have a grant above
+    # (nonzero row in the table -- e.g. transcript/cache history from back when
+    # they were authorized) get a SEPARATE advisory here, rather than being
+    # silently indistinguishable from a fully working server in the table.
+    # Grants for these are intentionally NOT revoked/blocked: the moment the
+    # user re-authenticates via /mcp, the existing grant just starts working
+    # again -- no reclassification required.
+    zero_tool_norm = {_norm(s["name"]) for s in zero_tool}
+    stale_grant_needs_auth = [
+        s for s in servers
+        if _norm(s["name"]) not in zero_tool_norm
+        and (status_category(s["status"]) == "needs authentication"
+             or _norm(s["name"]) in needs_auth_norm)
+    ]
+    if stale_grant_needs_auth:
+        lines.append("")
+        lines.append("## Granted but currently needs authentication\n")
+        lines.append("These servers have a tool grant in the table above (from cache or "
+                      "session-transcript history) that is NOT revoked while unauthenticated -- "
+                      "it will simply start working again once re-authenticated, with no "
+                      "reclassification needed.\n")
+        for s in stale_grant_needs_auth:
+            lines.append(f"- {s['name']} — needs authentication; authorize via /mcp.")
+
     open(ROUTING, "w").write("\n".join(lines) + "\n")
 
 def main():
@@ -391,34 +574,54 @@ def main():
         except Exception: cache = {}
 
     tools = None
+    needs_auth = cache.get("needs_auth", [])
     if "--force" not in sys.argv and cache.get("hash") == h and cache.get("tools"):
-        tools = cache["tools"]          # servers unchanged -> reuse (no model call)
+        tools = cache["tools"]          # servers unchanged -> reuse (no re-enumeration)
     else:
         statuses = wait_for_settled()   # don't enumerate while servers are still connecting
         h, servers = server_hash(statuses)  # re-key the cache off the SETTLED status, not the
                                              # mid-connect snapshot taken before we waited -- so
                                              # the next run's hash comparison is apples-to-apples
-        tools = enumerate_tools()
+        tools, needs_auth = enumerate_tools(servers)
         for _ in range(RETRY_MAX):
             if not incomplete_connected_servers(statuses, tools):
                 break
             time.sleep(RETRY_WAIT)         # a connected server produced 0 tools -> it likely
             statuses = parse_mcp_servers() # connected late; re-enumerate and merge in what's new
-            retry_tools = enumerate_tools()
+            retry_tools, retry_needs_auth = enumerate_tools(statuses)
             if retry_tools:
                 tools = merge_tool_lists(tools, retry_tools)
-        tools = merge_with_cache(tools, cache.get("tools"))  # never clobber good grants with 0
+            needs_auth = retry_needs_auth or needs_auth
+        # Drop cached entries for servers `claude mcp list` no longer reports at
+        # all (genuinely removed configs, e.g. an old transcript-era or headless-
+        # era server) BEFORE handing cache_tools to merge_with_cache -- it can
+        # only tell "connected server returned 0 this run" from "server isn't
+        # configured anymore" if we don't feed it the latter. This is a filter
+        # at the call site; merge_with_cache's own zero-clobber logic is untouched.
+        configured_norm = {_norm(s["name"]) for s in servers}
+        cache_tools = [t for t in (cache.get("tools") or [])
+                       if _norm(tool_segment(t.get("name",""))) in configured_norm]
+        tools = merge_with_cache(tools, cache_tools)  # never clobber good grants with 0
+
+    # NOTE: grants for servers currently needing authentication (or otherwise
+    # not reachable) are intentionally NOT stripped here -- if the server was
+    # ever authorized before (cache/transcript history has real tool names for
+    # it), the agent keeps that grant so it starts working again the moment
+    # the user re-authenticates via /mcp, with no reclassification required.
+    # write_routing still surfaces current needs-auth status as an advisory,
+    # independent of whether a grant already exists.
 
     assignment = assign(tools, policy)
 
     if "--print" in sys.argv:
-        write_routing(tools, assignment, servers)
+        write_routing(tools, assignment, servers, needs_auth)
         print(open(ROUTING).read()); return
 
     generate_agents(assignment)
-    write_routing(tools, assignment, servers)
+    write_routing(tools, assignment, servers, needs_auth)
     os.makedirs(STATE_DIR, exist_ok=True)
-    json.dump({"hash": h, "tools": tools, "assignment": assignment}, open(CACHE,"w"), indent=2)
+    json.dump({"hash": h, "tools": tools, "assignment": assignment, "needs_auth": needs_auth},
+              open(CACHE,"w"), indent=2)
     n = sum(len(v) for v in assignment.values())
     print(f"tokenwise: {n} MCP tools classified across {len(servers)} servers "
           f"(scout {len(assignment.get('scout',[]))}, mechanic {len(assignment.get('mechanic',[]))}); "

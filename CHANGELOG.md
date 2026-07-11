@@ -2,6 +2,24 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.3.0] — 2026-07-11
+
+### Changed — deterministic MCP enumeration
+- Tool enumeration no longer asks a headless Haiku model to recite its tool
+  list (which truncated/dropped servers on large setups — a 30-server / 219-
+  tool user lost the Slack plugin's tools entirely). It now replays the
+  `deferred_tools_delta` records Claude Code writes into session transcripts
+  (~/.claude/projects/*/*.jsonl) — the exact runtime tool-name list, incl.
+  plugin-provided servers (`mcp__plugin_<plugin>_<server>__*`). No model
+  call, fully deterministic (identical output run-to-run), can't truncate.
+- Unions newest-first across transcripts until every configured server is
+  covered, so a single session that raced a slow-connecting server can't
+  cause a miss.
+- Headless enumeration is kept ONLY as a fallback for a brand-new machine
+  with no prior session transcripts.
+- Verified end-to-end against the real authenticated Slack plugin: 19 tools
+  -> 12 scout / 7 mechanic, deterministically, zero model calls.
+
 ## [0.2.3] — 2026-07-11
 
 ### Fixed
