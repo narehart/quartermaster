@@ -26,7 +26,7 @@ the child. The SessionStart hook also guards on it.
 
 Usage: classify-mcp.py [--templates DIR] [--agents DIR] [--force] [--print]
 """
-import json, os, re, subprocess, sys, hashlib
+import json, os, re, subprocess, sys, hashlib, time
 
 if os.environ.get("TOKENWISE_CLASSIFYING"):
     sys.exit(0)  # reentrancy guard: we're inside the enumeration child
@@ -37,6 +37,16 @@ CACHE = os.path.join(STATE_DIR, "cache.json")
 ROUTING = os.path.join(STATE_DIR, "TOOL-ROUTING.md")
 POLICY = os.path.join(STATE_DIR, "mcp-policy.json")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Connection-race constants. Some MCP servers (e.g. a plugin-provided `slack`)
+# are still connecting when SessionStart fires `claude mcp list` reports them
+# with a non-terminal status (or omits them entirely) until they settle.
+CONNECT_POLL_INTERVAL = 3   # seconds between `claude mcp list` polls
+CONNECT_TIMEOUT       = 60  # total seconds to wait for servers to settle
+RETRY_WAIT            = 5   # seconds to wait before re-enumerating an incomplete server
+RETRY_MAX             = 3   # max re-enumeration attempts for incomplete servers
+
+SETTLED_RE = re.compile(r'connected|failed|needs authentication', re.I)
 
 def arg(flag, default=None):
     return sys.argv[sys.argv.index(flag)+1] if flag in sys.argv else default
@@ -56,6 +66,95 @@ def server_hash():
     out = run(["claude","mcp","list"], timeout=30)
     servers = sorted(set(re.findall(r'^([A-Za-z0-9._-]+):', out, re.M)) - {"Checking"})
     return hashlib.sha256("\n".join(servers).encode()).hexdigest(), servers
+
+def parse_mcp_list():
+    """{display_name: status_text} from `claude mcp list`, e.g.
+    'claude.ai Google Drive: https://... - ✔ Connected' ->
+    {'claude.ai Google Drive': '✔ Connected'}. Display names may contain
+    spaces/dots, so split on ': ' + ' - ' rather than assuming a charset."""
+    out = run(["claude","mcp","list"], timeout=30)
+    statuses = {}
+    for line in out.splitlines():
+        m = re.match(r'^(.+?):\s.+\s-\s+(.+)$', line.strip())
+        if m:
+            statuses[m.group(1).strip()] = m.group(2).strip()
+    return statuses
+
+def wait_for_settled(timeout=CONNECT_TIMEOUT, interval=CONNECT_POLL_INTERVAL, confirm=2):
+    """Poll `claude mcp list` until every server it reports has a terminal
+    status (Connected / Needs authentication / Failed) AND the set of server
+    names is unchanged, for `confirm` consecutive polls in a row (or the
+    timeout elapses). Requiring repeated confirmation -- not just one clean
+    poll -- gives a server that hasn't been printed by `claude mcp list` yet
+    at all more chances to appear before we declare things settled; it can't
+    be foolproof against an arbitrarily slow late starter, which is why
+    incomplete_connected_servers() below is a second, independent safety net
+    applied AFTER enumeration too."""
+    deadline = time.time() + timeout
+    prev_names = None
+    stable_hits = 0
+    statuses = {}
+    while True:
+        statuses = parse_mcp_list()
+        pending = {n: s for n, s in statuses.items() if not SETTLED_RE.search(s)}
+        stable = prev_names is not None and prev_names == set(statuses)
+        stable_hits = stable_hits + 1 if (not pending and stable) else 0
+        if stable_hits >= confirm:
+            return statuses
+        if time.time() >= deadline:
+            return statuses
+        prev_names = set(statuses)
+        time.sleep(interval)
+
+def _norm(s):
+    return re.sub(r'[^a-z0-9]', '', s.lower())
+
+def connected_display_names(statuses):
+    """Servers `claude mcp list` reports as fully Connected (not needing
+    auth, not failed)."""
+    return [n for n, s in statuses.items()
+            if re.search(r'connected', s, re.I) and not re.search(r'needs authentication|failed', s, re.I)]
+
+def tool_server_segments(tools):
+    segs = set()
+    for t in tools or []:
+        parts = t.get("name","").split("__")
+        if len(parts) >= 3:
+            segs.add(parts[1])
+    return segs
+
+def incomplete_connected_servers(statuses, tools):
+    """Connected servers that produced ZERO tools in this enumeration --
+    almost certainly because they connected AFTER enumeration started."""
+    connected = connected_display_names(statuses)
+    segs_norm = {_norm(s) for s in tool_server_segments(tools)}
+    return [n for n in connected if _norm(n) not in segs_norm]
+
+def merge_tool_lists(base, extra):
+    merged = {t["name"]: t for t in (base or [])}
+    for t in (extra or []):
+        merged.setdefault(t["name"], t)
+    return list(merged.values())
+
+def merge_with_cache(tools, cache_tools):
+    """Never let a connected server that returns zero tools this run clobber
+    its previously-cached tools: keep last-known-good per server, and only
+    replace a server's tool set when this run actually returned tools for it."""
+    if not cache_tools:
+        return tools or []
+    def seg(name):
+        parts = name.split("__")
+        return parts[1] if len(parts) >= 3 else ""
+    servers_with_new = {seg(t["name"]) for t in (tools or []) if seg(t["name"])}
+    merged = list(tools or [])
+    seen_names = {t["name"] for t in merged}
+    for t in cache_tools:
+        if seg(t.get("name","")) in servers_with_new:
+            continue  # this run has fresh data for that server -> trust it, drop stale entries
+        if t["name"] not in seen_names:
+            merged.append(t)
+            seen_names.add(t["name"])
+    return merged
 
 READ_RE  = re.compile(r'(^|_)(get|list|search|read|fetch|describe|inspect|view|find|count|status|overview|export|download|check)(_|$)', re.I)
 WRITE_RE = re.compile(r'(^|_)(create|update|delete|send|write|move|remove|set|add|edit|compose|save|manage|trash|reply|forward|upload|modify|patch|put|post|run|exec|apply|import|sync|copy|rename|archive|fill|click|navigate|type|drag|press|emulate|resize|handle)(_|$)', re.I)
@@ -95,7 +194,6 @@ def list_tools_stdio(command, args, env=None):
         try: p.stdin.write(json.dumps(o)+"\n"); p.stdin.flush(); return True
         except Exception: return False
     try:
-        import time
         if not send({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"tokenwise","version":"0"}}}): return []
         p.stdout.readline()
         send({"jsonrpc":"2.0","method":"notifications/initialized"})
@@ -238,11 +336,17 @@ def main():
     if "--force" not in sys.argv and cache.get("hash") == h and cache.get("tools"):
         tools = cache["tools"]          # servers unchanged -> reuse (no model call)
     else:
+        statuses = wait_for_settled()   # don't enumerate while servers are still connecting
         tools = enumerate_tools()
-        if tools is None:               # enumeration failed -> keep last known
-            tools = cache.get("tools")
-        if tools is None:
-            tools = []
+        for _ in range(RETRY_MAX):
+            if not incomplete_connected_servers(statuses, tools):
+                break
+            time.sleep(RETRY_WAIT)      # a connected server produced 0 tools -> it likely
+            statuses = parse_mcp_list() # connected late; re-enumerate and merge in what's new
+            retry_tools = enumerate_tools()
+            if retry_tools:
+                tools = merge_tool_lists(tools, retry_tools)
+        tools = merge_with_cache(tools, cache.get("tools"))  # never clobber good grants with 0
 
     assignment = assign(tools, policy)
 

@@ -2,6 +2,16 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.2.2] — 2026-07-11
+
+### Fixed
+- MCP connection race: the classifier ran at SessionStart while some servers
+  (e.g. a plugin-provided `slack`) were still connecting, so their tools were
+  missed and never granted. Now waits for `claude mcp list` connections to
+  settle before enumerating, retries enumeration (up to 3×) if a Connected
+  server yields zero tools, and never clobbers a server's cached grants with
+  an empty result. Also removes the run-to-run enumeration variance.
+
 ## [0.2.1] — 2026-07-11
 
 ### Fixed
