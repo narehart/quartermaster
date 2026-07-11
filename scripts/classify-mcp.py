@@ -3,8 +3,14 @@
 
 Enumerates and classifies every available MCP tool by asking an UNRESTRICTED,
 already-authenticated headless Claude session (`claude -p --agent claude`) — the
-only path that reaches OAuth/remote servers, since it uses the live tokens. Each
-tool is tagged read or write, then written into the generated agents:
+only path that reaches OAuth/remote/plugin-provided servers, since it uses the
+live tokens. That headless enumeration is the SOURCE OF TRUTH for tool NAMES
+(exact, verbatim, runtime names — including plugin-provided servers' real
+`mcp__plugin_<plugin>_<server>__` prefix); the stdio protocol path is only ever
+trusted to synthesize a name for servers it can directly confirm the prefix of
+(plain ~/.claude.json / .mcp.json stdio servers), and otherwise only supplies
+read/write annotations. Each tool is tagged read or write, then written into
+the generated agents:
   read  -> scout     (read-only recon tier)
   write -> mechanic  (execution tier)
 The orchestrator holds no MCP tools; it reads TOOL-ROUTING.md to route.
@@ -110,10 +116,17 @@ def list_tools_stdio(command, args, env=None):
     return []
 
 def enumerate_headless():
-    """Authed headless Claude — the ONLY path that reaches OAuth/remote servers."""
+    """Authed headless Claude — the ONLY path that reaches OAuth/remote/plugin-provided
+    servers, and therefore the SOURCE OF TRUTH for tool NAMES (they must exactly match
+    the runtime names granted to generated agents)."""
     prompt = ("Output ONLY a JSON array — no prose, no markdown fence. First call ToolSearch to "
               "load any deferred MCP tools. Then for EVERY tool available to you whose name starts "
-              'with "mcp__", output {"name":"<full tool name>","tier":"read" or "write"}. '
+              'with "mcp__", output {"name":"<tool name>","tier":"read" or "write"}. '
+              'The "name" field MUST be the EXACT, verbatim, case-sensitive tool name as it appears '
+              "in your own tool list right now — copy it character-for-character. Do NOT normalize, "
+              "retitle, guess, abbreviate, or reformat it, and do NOT alter, add, or drop any part of "
+              'its prefix (for example a plugin-provided server\'s prefix like "mcp__plugin_<plugin>_'
+              '<server>__" must be reproduced exactly as-is, not simplified to "mcp__<server>__"). '
               "tier=read when the tool only observes/queries and never changes state; tier=write "
               "when it creates, modifies, sends, deletes, uploads, or executes. Be exhaustive.")
     env = dict(os.environ); env["TOKENWISE_CLASSIFYING"] = "1"
@@ -127,16 +140,35 @@ def enumerate_headless():
         return []
 
 def enumerate_tools():
-    """Hybrid: deterministic protocol for stdio (complete, uses annotations),
-    headless to fill in OAuth/remote servers + any stdio the protocol missed."""
-    tools = {}   # full_name -> {"name","tier"}
+    """Hybrid, but with a strict trust order: headless enumeration is the ONLY source
+    of truth for tool NAMES, since it reflects real runtime names (including
+    plugin-provided servers, whose prefix is `mcp__plugin_<plugin>_<server>__`, NOT
+    `mcp__<server>__`). The stdio protocol path only ever confirms the runtime prefix
+    for servers it can directly see in ~/.claude.json / .mcp.json — those are always
+    plain stdio servers with a confirmed `mcp__<server>__` prefix (plugins declare
+    their own servers elsewhere and never appear here), so it is safe to synthesize
+    names for them. Protocol is used to (a) supply read/write annotations for tools
+    headless also reported, and (b) backfill confirmed-prefix stdio tools headless
+    missed. It NEVER overrides or supersedes a name headless actually reported, and
+    it never contributes a name for a server it can't confirm the prefix for."""
+    proto = {}   # full_name -> {"name","tier"}, confirmed-prefix stdio tools only
     for name, spec in load_servers().items():
         if spec.get("command"):
             for t in list_tools_stdio(spec["command"], spec.get("args",[]), spec.get("env")):
                 full = f"mcp__{name}__{t.get('name','')}"
-                tools[full] = {"name": full, "tier": classify_proto(t)}
-    for t in enumerate_headless():        # adds remote/OAuth; never overrides protocol result
-        tools.setdefault(t["name"], {"name": t["name"], "tier": t.get("tier","write")})
+                proto[full] = {"name": full, "tier": classify_proto(t)}
+
+    headless = enumerate_headless()      # authoritative runtime tool NAMES
+    if not headless and not proto:
+        return None
+
+    tools = {}
+    for t in headless:                   # names as reported by the runtime, verbatim
+        name = t["name"]
+        tier = proto[name]["tier"] if name in proto else t.get("tier", "write")
+        tools[name] = {"name": name, "tier": tier}
+    for full, t in proto.items():         # backfill confirmed stdio tools headless missed
+        tools.setdefault(full, t)
     return list(tools.values()) or None
 
 def load_policy():

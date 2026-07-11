@@ -2,6 +2,18 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.2.1] — 2026-07-11
+
+### Fixed
+- Plugin-provided MCP servers were not granted correctly: their runtime tools
+  use the `mcp__plugin_<plugin>_<server>__<tool>` scheme and aren't in
+  ~/.claude.json, so the classifier emitted non-matching patterns (e.g.
+  `mcp__slack__*`) and the real plugin tools went ungranted. Headless
+  enumeration is now the source of truth for exact tool NAMES (prompt forbids
+  normalizing the plugin prefix); the stdio protocol path only supplies
+  read/write annotations for names it can confirm. Reported from real use
+  (Slack plugin on a second machine).
+
 ## [0.2.0] — 2026-07-11
 
 ### Added — MCP tool tiering
