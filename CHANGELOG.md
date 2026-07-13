@@ -2,6 +2,31 @@
 
 All notable changes to TokenWise. Versions follow [semver](https://semver.org).
 
+## [0.4.0] — 2026-07-12
+
+### Added — built-in tool tiering
+- Claude Code's deferred BUILT-IN tools (Monitor, SendMessage, Task*, Cron*,
+  PushNotification, RemoteTrigger, LSP, NotebookEdit, worktree tools, …) are
+  now classified and granted instead of silently dropped. The agent allowlists
+  previously named only a fixed base set + MCP tools, so these were unusable.
+- Coordination tools -> orchestrator (Monitor, SendMessage, Task*, Cron*,
+  PushNotification, RemoteTrigger, plan-mode, MCP-resource readers).
+  Mutating tools -> mechanic/builder (NotebookEdit, worktree, DesignSync, LSP).
+  Read-only -> scout.
+- Unknown/new built-ins default to mechanic ONLY and are surfaced in
+  TOOL-ROUTING.md, so a future Claude Code release can't silently hand the
+  orchestrator an implementation tool.
+- Hard denial enforced in code: the orchestrator can never be granted Edit,
+  Write, MultiEdit, NotebookEdit or Bash — not via the map, not via the
+  unknown default, not via a policy override (verified by test).
+- Optional `builtins` overrides in mcp-policy.json.
+
+### Note
+- `Monitor` executes a command, so granting it to the orchestrator is a
+  deliberate exception to "the orchestrator has no shell". Set
+  `{"builtins": {"Monitor": "mechanic"}}` in mcp-policy.json to keep that
+  guarantee strict (you lose wake-on-output in the main thread).
+
 ## [0.3.1] — 2026-07-11
 
 ### Fixed

@@ -287,10 +287,15 @@ def _transcript_deferred_names(path):
     """Replay a single transcript's `deferred_tools_delta` records IN ORDER.
     Each record's addedNames are unioned in, removedNames pruned OUT -- both
     scoped to THIS transcript only (a name removed in one session's replay
-    never affects another session's). Returns (mcp_names_set,
+    never affects another session's). addedNames mixes MCP tool names
+    (`mcp__*`) and Claude Code's own DEFERRED BUILT-IN tools (Monitor,
+    SendMessage, Task*/Cron*, LSP, NotebookEdit, ...) -- both are recorded
+    verbatim here and split by the mcp__ prefix, so callers get each list
+    separately. Returns (mcp_names_set, builtin_names_set,
     needs_auth_last_seen_or_None, saw_any_record_bool). Never raises -- an
     unreadable/corrupt transcript is just treated as if it had no records."""
     names = set()
+    builtin_names = set()
     needs_auth = None
     saw_record = False
     try:
@@ -308,16 +313,21 @@ def _transcript_deferred_names(path):
                     continue
                 saw_record = True
                 for n in (att.get("addedNames") or []):
-                    if isinstance(n, str) and n.startswith("mcp__"):
+                    if not isinstance(n, str):
+                        continue
+                    if n.startswith("mcp__"):
                         names.add(n)
+                    else:
+                        builtin_names.add(n)
                 for n in (att.get("removedNames") or []):
                     names.discard(n)
+                    builtin_names.discard(n)
                 na = att.get("needsAuthMcpServers")
                 if na is not None:
                     needs_auth = na
     except Exception:
-        return set(), None, False
-    return names, needs_auth, saw_record
+        return set(), set(), None, False
+    return names, builtin_names, needs_auth, saw_record
 
 def enumerate_transcripts(configured_servers=None):
     """DETERMINISTIC MCP tool-name source, no model call: Claude Code itself
@@ -347,20 +357,28 @@ def enumerate_transcripts(configured_servers=None):
     that recorded one, never merged across sessions -- auth state goes stale,
     unlike tool names (a name once offered is still a real name).
 
-    Returns (sorted_name_list_or_None, needs_auth_list). None means NO
-    transcript anywhere ever recorded a deferred_tools_delta -- caller should
-    fall back to enumerate_headless()."""
+    Deferred BUILT-IN tool names (everything addedNames carries that does NOT
+    start with mcp__ -- Monitor, SendMessage, Task*/Cron*, LSP, NotebookEdit,
+    etc.) are unioned across every transcript scanned, with no per-server
+    early-exit/filter (they aren't tied to any configured MCP server).
+
+    Returns (sorted_mcp_name_list_or_None, needs_auth_list,
+    sorted_builtin_name_list). None for the first element means NO transcript
+    anywhere ever recorded a deferred_tools_delta -- caller should fall back
+    to enumerate_headless()."""
     configured_norm = {_norm(s["name"]) for s in (configured_servers or [])}
     names = set()
+    builtin_names = set()
     needs_auth = None
     needs_auth_set = False
     any_record = False
     for path in transcript_files():
-        t_names, t_needs_auth, saw_record = _transcript_deferred_names(path)
+        t_names, t_builtin_names, t_needs_auth, saw_record = _transcript_deferred_names(path)
         if not saw_record:
             continue
         any_record = True
         names |= t_names
+        builtin_names |= t_builtin_names
         if not needs_auth_set:
             needs_auth = t_needs_auth
             needs_auth_set = True
@@ -369,10 +387,10 @@ def enumerate_transcripts(configured_servers=None):
             if configured_norm <= segs_norm:
                 break
     if not any_record:
-        return None, (needs_auth or [])
+        return None, (needs_auth or []), sorted(builtin_names)
     if configured_norm:
         names = {n for n in names if _norm(tool_segment(n)) in configured_norm}
-    return sorted(names), (needs_auth or [])
+    return sorted(names), (needs_auth or []), sorted(builtin_names)
 
 def enumerate_headless():
     """Authed headless Claude — FALLBACK ONLY, used when no transcript anywhere
@@ -418,9 +436,12 @@ def enumerate_tools(servers=None):
     prefix for.
 
     enumerate_headless() (one Haiku call, flaky at scale) is used ONLY when
-    NO transcript anywhere has ever recorded a deferred_tools_delta.
+    NO transcript anywhere has ever recorded a deferred_tools_delta. It never
+    discovers deferred BUILT-IN tool names (only transcripts record those),
+    so builtin_names below comes from enumerate_transcripts regardless of
+    which path (transcript/headless) supplied the MCP tool names.
 
-    Returns (tools_list_or_None, needs_auth_list)."""
+    Returns (tools_list_or_None, needs_auth_list, builtin_name_list)."""
     proto = {}   # full_name -> {"name","tier"}, confirmed-prefix stdio tools only
     for name, spec in load_servers().items():
         if spec.get("command"):
@@ -428,7 +449,7 @@ def enumerate_tools(servers=None):
                 full = f"mcp__{name}__{t.get('name','')}"
                 proto[full] = {"name": full, "tier": classify_proto(t)}
 
-    names, needs_auth = enumerate_transcripts(servers)
+    names, needs_auth, builtin_names = enumerate_transcripts(servers)
     if names is not None:                # transcript replay -- primary, deterministic path
         tools = {}
         for n in names:                  # names as recorded by the runtime, verbatim
@@ -436,11 +457,11 @@ def enumerate_tools(servers=None):
             tools[n] = {"name": n, "tier": tier}
         for full, t in proto.items():    # backfill confirmed stdio tools transcripts missed
             tools.setdefault(full, t)
-        return (list(tools.values()) or None), needs_auth
+        return (list(tools.values()) or None), needs_auth, builtin_names
 
     headless = enumerate_headless()      # last-resort fallback: no transcript history at all
     if not headless and not proto:
-        return None, needs_auth
+        return None, needs_auth, builtin_names
 
     tools = {}
     for t in headless:                   # names as reported by the runtime, verbatim
@@ -449,7 +470,7 @@ def enumerate_tools(servers=None):
         tools[name] = {"name": name, "tier": tier}
     for full, t in proto.items():         # backfill confirmed stdio tools headless missed
         tools.setdefault(full, t)
-    return (list(tools.values()) or None), needs_auth
+    return (list(tools.values()) or None), needs_auth, builtin_names
 
 def load_policy():
     if os.path.exists(POLICY):
@@ -473,20 +494,88 @@ def assign(tools, policy):
     for k in out: out[k] = sorted(set(out[k]))
     return out
 
-def generate_agents(assignment):
+# Curated map of Claude Code's own DEFERRED BUILT-IN tools (everything
+# `deferred_tools_delta.addedNames` carries that does NOT start with
+# `mcp__` -- Monitor, SendMessage, Task*/Cron*, LSP, NotebookEdit, worktree
+# tools, etc.) to the agent(s) that should hold them. A tool may legitimately
+# appear under more than one agent (e.g. LSP: scout/mechanic/builder all get
+# it). This is a curated allowlist, not a heuristic -- names absent from it
+# are "unknown" and handled by the safe default in classify_builtins().
+BUILTIN_TIERS = {
+    "orchestrator": ["Monitor", "SendMessage", "TaskCreate", "TaskGet", "TaskList",
+                      "TaskOutput", "TaskStop", "TaskUpdate", "CronCreate", "CronList",
+                      "CronDelete", "PushNotification", "RemoteTrigger", "EnterPlanMode",
+                      "ExitPlanMode", "ToolSearch", "ListMcpResourcesTool",
+                      "ReadMcpResourceTool", "ReadMcpResourceDirTool", "WebFetch", "WebSearch"],
+    "scout":        ["ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool", "LSP", "WebFetch", "WebSearch"],
+    "mechanic":     ["NotebookEdit", "EnterWorktree", "ExitWorktree", "DesignSync", "LSP", "WebFetch", "WebSearch"],
+    "builder":      ["NotebookEdit", "LSP", "EnterWorktree", "ExitWorktree", "WebFetch", "WebSearch"],
+}
+
+# Non-negotiable: the orchestrator must NEVER hold these, no matter what the
+# map, the unknown-builtin default, or a policy override says. Enforced
+# defensively in classify_builtins() itself (not just by omission from the
+# map above), since a policy override could otherwise try to grant one.
+HARD_DENIED_ORCHESTRATOR_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"}
+
+def classify_builtins(builtin_names, policy):
+    """Assign observed deferred BUILT-IN tool names (non-mcp__) to agents.
+
+    Precedence per name:
+      1. policy["builtins"][name] -- explicit override, single agent, replaces
+         whatever BUILTIN_TIERS says for that name.
+      2. BUILTIN_TIERS -- curated default; a name may land on several agents.
+      3. Unknown (observed but in neither of the above) -- granted ONLY to
+         mechanic, and reported back separately so it can be surfaced in
+         TOOL-ROUTING.md and reclassified via policy if desired.
+
+    The orchestrator can NEVER end up with Edit/Write/MultiEdit/NotebookEdit/
+    Bash, regardless of source -- filtered out defensively as the last step.
+
+    Returns ({"orchestrator":[...], "scout":[...], "mechanic":[...],
+    "builder":[...]}, sorted_unknown_names)."""
+    overrides = policy.get("builtins", {})
+    out = {"orchestrator": set(), "scout": set(), "mechanic": set(), "builder": set()}
+    unknown = set()
+    for name in (builtin_names or []):
+        if name in overrides:
+            agent = overrides[name]
+            if agent in out:
+                out[agent].add(name)
+            continue
+        agents_for_name = [a for a, names in BUILTIN_TIERS.items() if name in names]
+        if agents_for_name:
+            for a in agents_for_name:
+                out[a].add(name)
+        else:
+            out["mechanic"].add(name)
+            unknown.add(name)
+    out["orchestrator"] -= HARD_DENIED_ORCHESTRATOR_TOOLS
+    return {k: sorted(v) for k, v in out.items()}, sorted(unknown)
+
+def generate_agents(mcp_assignment, builtin_assignment):
+    """mcp_assignment: {"scout":[...], "mechanic":[...]} from assign().
+    builtin_assignment: {"orchestrator":[...], "scout":[...], "mechanic":[...],
+    "builder":[...]} from classify_builtins(). Both are appended onto each
+    template's existing `tools:` line, skipping any name already present
+    there so nothing is duplicated."""
     os.makedirs(AGENTS_DIR, exist_ok=True)
     for base in ["orchestrator","scout","mechanic","builder"]:
         tpl = os.path.join(TEMPLATES, base+".md")
         if not os.path.exists(tpl): continue
         content = open(tpl).read()
-        add = assignment.get(base, [])
-        if add:
-            content = re.sub(r'^(tools:.*)$',
-                             lambda m: m.group(1).rstrip() + ", " + ", ".join(add),
-                             content, count=1, flags=re.M)
+        add = list(mcp_assignment.get(base, [])) + list(builtin_assignment.get(base, []))
+        m = re.search(r'^tools:(.*)$', content, flags=re.M)
+        if add and m:
+            existing = {s.strip() for s in m.group(1).split(",") if s.strip()}
+            new_names = [n for n in add if n not in existing]
+            if new_names:
+                content = re.sub(r'^(tools:.*)$',
+                                 lambda mm: mm.group(1).rstrip() + ", " + ", ".join(new_names),
+                                 content, count=1, flags=re.M)
         open(os.path.join(AGENTS_DIR, base+".md"), "w").write(content)
 
-def write_routing(tools, assignment, servers, needs_auth=None):
+def write_routing(tools, assignment, servers, needs_auth=None, builtin_assignment=None, unknown_builtins=None):
     """servers: list of {"name","status"} from parse_mcp_servers()/server_hash() --
     EVERY server `claude mcp list` reports, including ones with zero enumerated
     tools (needs-auth, still connecting, failed, or connected-but-empty). None of
@@ -495,7 +584,14 @@ def write_routing(tools, assignment, servers, needs_auth=None):
     transcript (enumerate_transcripts) -- a second, independent needs-auth
     signal alongside the `claude mcp list` status parse, since a server can
     need auth in Claude Code's own view of the world (transcript) even when
-    the CLI's status line hasn't caught up yet (or vice versa)."""
+    the CLI's status line hasn't caught up yet (or vice versa).
+    builtin_assignment: {"orchestrator":[...], "scout":[...], "mechanic":[...],
+    "builder":[...]} from classify_builtins() -- Claude Code's own deferred
+    built-in tools (Monitor, SendMessage, Task*/Cron*, LSP, ...), separate
+    from MCP tools.
+    unknown_builtins: sorted names classify_builtins() couldn't match in
+    BUILTIN_TIERS and fell to the mechanic-only safe default -- surfaced here
+    so they can be reclassified via mcp-policy.json's "builtins" key."""
     os.makedirs(STATE_DIR, exist_ok=True)
     by_server = {}
     for t in tools:
@@ -563,6 +659,32 @@ def write_routing(tools, assignment, servers, needs_auth=None):
         for s in stale_grant_needs_auth:
             lines.append(f"- {s['name']} — needs authentication; authorize via /mcp.")
 
+    builtin_assignment = builtin_assignment or {}
+    unknown_builtins = unknown_builtins or []
+    lines.append("")
+    lines.append("## Built-in tools\n")
+    lines.append("Claude Code's own DEFERRED BUILT-IN tools (Monitor, SendMessage, "
+                  "Task*/Cron*, LSP, NotebookEdit, worktree tools, ...) -- observed via "
+                  "session-transcript `deferred_tools_delta` records, classified by "
+                  "`BUILTIN_TIERS` (a tool may be granted to more than one agent), and "
+                  "overridable per-name via mcp-policy.json's `builtins` key. The "
+                  "orchestrator can never hold Edit/Write/MultiEdit/NotebookEdit/Bash, "
+                  "regardless of map or override.\n")
+    lines.append("| Agent | Built-in tools granted |")
+    lines.append("|---|---|")
+    for agent in ["orchestrator", "scout", "mechanic", "builder"]:
+        names = builtin_assignment.get(agent) or []
+        lines.append(f"| {agent} | {', '.join(names) if names else '(none)'} |")
+    if unknown_builtins:
+        lines.append("")
+        lines.append("### Unknown built-ins (fell to mechanic default)\n")
+        lines.append("Observed in session transcripts but not in `BUILTIN_TIERS` -- granted "
+                      "ONLY to mechanic as a safe default (never auto-granted to the "
+                      "orchestrator). Reclassify via `mcp-policy.json`'s `builtins` key, "
+                      'e.g. `{"builtins": {"' + unknown_builtins[0] + '": "scout"}}`.\n')
+        for n in unknown_builtins:
+            lines.append(f"- {n}")
+
     open(ROUTING, "w").write("\n".join(lines) + "\n")
 
 def main():
@@ -575,6 +697,7 @@ def main():
 
     tools = None
     needs_auth = cache.get("needs_auth", [])
+    builtin_names = cache.get("builtin_names", [])  # deferred BUILT-IN tool names (non-mcp__)
     cached_tools = cache.get("tools")
     # A cache hit (unchanged hash) is only trustworthy if every server CURRENTLY
     # Connected actually has at least one tool in the cached set. Without this,
@@ -587,21 +710,25 @@ def main():
     stale_cache = bool(cached_tools) and bool(incomplete_connected_servers(servers, cached_tools))
     if "--force" not in sys.argv and cache.get("hash") == h and cached_tools and not stale_cache:
         tools = cached_tools             # servers unchanged -> reuse (no re-enumeration)
+        # builtin_names above (from cache) is reused too -- it isn't tied to
+        # the MCP server hash, but re-deriving it costs nothing on a cache
+        # miss and this branch is specifically the no-re-enumeration path.
     else:
         statuses = wait_for_settled()   # don't enumerate while servers are still connecting
         h, servers = server_hash(statuses)  # re-key the cache off the SETTLED status, not the
                                              # mid-connect snapshot taken before we waited -- so
                                              # the next run's hash comparison is apples-to-apples
-        tools, needs_auth = enumerate_tools(servers)
+        tools, needs_auth, builtin_names = enumerate_tools(servers)
         for _ in range(RETRY_MAX):
             if not incomplete_connected_servers(statuses, tools):
                 break
             time.sleep(RETRY_WAIT)         # a connected server produced 0 tools -> it likely
             statuses = parse_mcp_servers() # connected late; re-enumerate and merge in what's new
-            retry_tools, retry_needs_auth = enumerate_tools(statuses)
+            retry_tools, retry_needs_auth, retry_builtin_names = enumerate_tools(statuses)
             if retry_tools:
                 tools = merge_tool_lists(tools, retry_tools)
             needs_auth = retry_needs_auth or needs_auth
+            builtin_names = sorted(set(builtin_names) | set(retry_builtin_names))
         # Drop cached entries for servers `claude mcp list` no longer reports at
         # all (genuinely removed configs, e.g. an old transcript-era or headless-
         # era server) BEFORE handing cache_tools to merge_with_cache -- it can
@@ -612,6 +739,11 @@ def main():
         cache_tools = [t for t in (cache.get("tools") or [])
                        if _norm(tool_segment(t.get("name",""))) in configured_norm]
         tools = merge_with_cache(tools, cache_tools)  # never clobber good grants with 0
+        # Built-in tool names, once observed in ANY transcript history, are
+        # never tied to a specific MCP server config -- so union in whatever
+        # was cached before rather than letting a re-enumeration that missed
+        # scanning far enough back clobber a name seen previously.
+        builtin_names = sorted(set(builtin_names) | set(cache.get("builtin_names") or []))
 
     # NOTE: grants for servers currently needing authentication (or otherwise
     # not reachable) are intentionally NOT stripped here -- if the server was
@@ -622,19 +754,25 @@ def main():
     # independent of whether a grant already exists.
 
     assignment = assign(tools, policy)
+    builtin_assignment, unknown_builtins = classify_builtins(builtin_names, policy)
 
     if "--print" in sys.argv:
-        write_routing(tools, assignment, servers, needs_auth)
+        write_routing(tools, assignment, servers, needs_auth, builtin_assignment, unknown_builtins)
         print(open(ROUTING).read()); return
 
-    generate_agents(assignment)
-    write_routing(tools, assignment, servers, needs_auth)
+    generate_agents(assignment, builtin_assignment)
+    write_routing(tools, assignment, servers, needs_auth, builtin_assignment, unknown_builtins)
     os.makedirs(STATE_DIR, exist_ok=True)
-    json.dump({"hash": h, "tools": tools, "assignment": assignment, "needs_auth": needs_auth},
+    json.dump({"hash": h, "tools": tools, "assignment": assignment, "needs_auth": needs_auth,
+               "builtin_names": builtin_names, "builtin_assignment": builtin_assignment,
+               "unknown_builtins": unknown_builtins},
               open(CACHE,"w"), indent=2)
     n = sum(len(v) for v in assignment.values())
+    b = sum(len(v) for v in builtin_assignment.values())
     print(f"tokenwise: {n} MCP tools classified across {len(servers)} servers "
           f"(scout {len(assignment.get('scout',[]))}, mechanic {len(assignment.get('mechanic',[]))}); "
+          f"{b} built-in tool grants across orchestrator/scout/mechanic/builder "
+          f"({len(unknown_builtins)} unknown -> mechanic default); "
           f"agents regenerated in {AGENTS_DIR}")
 
 if __name__ == "__main__":
