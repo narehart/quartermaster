@@ -1,8 +1,8 @@
 {
-  "name": "tokenwise",
-  "displayName": "TokenWise",
-  "description": "Strict cost-tiered agent delegation. A tool-restricted orchestrator that cannot implement directly (no Edit/Write/Bash) delegates all execution to cheap tiered sub-agents (scout/mechanic on Haiku, builder on Sonnet), with a hook that hard-pins every sub-agent's model so nothing silently inherits the expensive session model.",
-  "version": "0.4.0",
+  "name": "quartermaster",
+  "displayName": "Quartermaster",
+  "description": "Least-privilege tool tiering and enforced delegation for Claude Code. A tool-restricted orchestrator that physically cannot implement (no Edit/Write/Bash) delegates all execution to cheap tiered sub-agents, and every tool — MCP and built-in — is automatically classified and issued to the tier that should hold it.",
+  "version": "0.5.0",
   "author": {
     "name": "narehart"
   },
