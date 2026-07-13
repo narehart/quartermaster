@@ -19,9 +19,18 @@ cheap-tier agent can't silently run on an expensive one.
 ## Development setup
 
 ```bash
-make setup   # pip install -r requirements-dev.txt, plus shellcheck/shfmt/gitleaks via brew
+make setup   # pip install -r requirements-dev.txt, plus shellcheck/shfmt/gitleaks/lefthook
+             # via brew, and `lefthook install` to wire local pre-commit gates
 make verify  # run before every commit/PR
 ```
+
+`make setup`'s `lefthook install` wires up `lefthook.yml`'s `pre-commit`
+gates (`gitleaks protect --staged`, `ruff check`/`ruff format --check` on
+staged `*.py`, `shfmt -d -i 2` on staged `*.sh`) and its `commit-msg` gate
+(`cz check`), so these run locally before a commit exists rather than only
+at CI/`make verify` time. If `lefthook install` can't wire `.git/hooks`
+(e.g. a custom global `core.hooksPath`), `make setup` prints a `NOTICE`
+instead of failing — see [ADR 0009](docs/adr/0009-local-pre-commit-gates-and-cve-scanning.md).
 
 `make verify` runs, in order:
 
@@ -43,6 +52,12 @@ make verify  # run before every commit/PR
   skip notice (not a failure)
 
 All gates must be green before you open a PR; CI runs the same `make verify`.
+
+CI also runs a separate `osv-scan` job (not part of `make verify`, since it
+needs network access): `osv-scanner` CVE scanning against the
+actually-installed dependency set (`pip freeze`), rather than the loose
+`requirements-dev.txt` — see
+[ADR 0009](docs/adr/0009-local-pre-commit-gates-and-cve-scanning.md) for why.
 
 ## Invariants — never break these
 

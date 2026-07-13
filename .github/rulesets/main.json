@@ -27,7 +27,8 @@
           { "context": "verify (3.11)" },
           { "context": "verify (3.12)" },
           { "context": "verify (3.13)" },
-          { "context": "actionlint" }
+          { "context": "actionlint" },
+          { "context": "osv-scan" }
         ]
       }
     },

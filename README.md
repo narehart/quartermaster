@@ -91,3 +91,16 @@ bash uninstall.sh                                                # reverts setti
 - **The tradeoff:** every edit and every MCP call routes through a sub-agent.
   Slower on trivial tasks; the point is the orchestrator never over-works.
 - Leaf agents have `disallowedTools: Agent, Task, Workflow` — no recursion.
+
+## Security gates
+
+Secret scanning (`gitleaks`) runs twice: locally on `pre-commit` via
+[lefthook](lefthook.yml) (`gitleaks protect --staged`, alongside `ruff`
+lint/format and `shfmt` checks on staged files), and again in CI/`make
+verify` (`gitleaks detect`). Dependency-CVE scanning (`osv-scanner`) now
+runs in CI too, as its own `osv-scan` job in
+[ci.yml](.github/workflows/ci.yml) — it scans the actually-installed
+dependency set (`pip freeze`) rather than the loose
+`requirements-dev.txt`, and is kept out of `make verify` since it needs
+network access; see
+[ADR 0009](docs/adr/0009-local-pre-commit-gates-and-cve-scanning.md) for why.

@@ -1,0 +1,33 @@
+# Local pre-commit gates, mirroring a subset of `make verify` (see Makefile)
+# so secrets/lint/format/shell issues are caught before a commit exists, not
+# just at CI or `make verify` time.
+#
+# NOTE: this machine's global `core.hooksPath` already installs a
+# `prepare-commit-msg` hook that calls out to `lefthook` if it's on PATH and
+# a `lefthook.yml` exists in the repo — that global hook was already active,
+# it just had nothing to run here. This file supplies the missing
+# repo-level config; it does not change or depend on any global git setup.
+#
+# None of these commands auto-fix or auto-stage — they fail the commit and
+# leave it to the author to fix and re-stage (`ruff format`/`ruff check
+# --fix`/`shfmt -w`), consistent with `make verify`'s check-only gates.
+pre-commit:
+  parallel: true
+  commands:
+    secrets:
+      glob: "*"
+      run: gitleaks protect --staged --no-banner --redact
+    lint:
+      glob: "*.py"
+      run: ruff check {staged_files}
+    format:
+      glob: "*.py"
+      run: ruff format --check {staged_files}
+    shell:
+      glob: "*.sh"
+      run: shfmt -d -i 2 {staged_files}
+
+commit-msg:
+  commands:
+    conventional-commit:
+      run: cz check --commit-msg-file {1}

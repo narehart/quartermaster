@@ -2,6 +2,27 @@
 
 All notable changes to Quartermaster. Versions follow [semver](https://semver.org).
 
+## [0.6.2] — 2026-07-13
+
+### Added
+- Local pre-commit gates via [lefthook](lefthook.yml): `secrets`
+  (`gitleaks protect --staged`), `lint`/`format` (`ruff check` /
+  `ruff format --check` on staged `*.py`), and `shell` (`shfmt -d -i 2` on
+  staged `*.sh`) all run on `pre-commit`, plus a `commit-msg` gate
+  (`cz check`) — so these checks fail a commit locally instead of being
+  caught only by CI/`make verify`. `make setup` now also installs lefthook
+  and runs `lefthook install`. See ADR 0009.
+
+### Security
+- `.gitignore` now defensively excludes `.env` and `.env.*`, so a local env
+  file can't be accidentally committed even though none is currently
+  tracked or required by the project.
+- `osv-scanner` CVE scanning now runs in CI (new `osv-scan` job in
+  [ci.yml](.github/workflows/ci.yml)), scanning the actually-installed
+  dependency set (`pip freeze`) rather than the loose
+  `requirements-dev.txt`, which otherwise resolves an unpinned transitive
+  `pygments` range to a vulnerable phantom floor version. See ADR 0009.
+
 ## [0.6.1] — 2026-07-13
 
 ### Changed

@@ -13,3 +13,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 uv.lock
+
+# defensive: never track local secrets/env files
+.env
+.env.*
