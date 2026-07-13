@@ -19,9 +19,18 @@ cheap-tier agent can't silently run on an expensive one.
 ## Development setup
 
 ```bash
-make setup   # pip install -r requirements-dev.txt, plus shellcheck/shfmt/gitleaks via brew
+make setup   # pip install -r requirements-dev.txt, plus shellcheck/shfmt/gitleaks/lefthook
+             # via brew, and `lefthook install` to wire local pre-commit gates
 make verify  # run before every commit/PR
 ```
+
+`make setup`'s `lefthook install` wires up `lefthook.yml`'s `pre-commit`
+gates (`gitleaks protect --staged`, `ruff check`/`ruff format --check` on
+staged `*.py`, `shfmt -d -i 2` on staged `*.sh`) and its `commit-msg` gate
+(`cz check`), so these run locally before a commit exists rather than only
+at CI/`make verify` time. If `lefthook install` can't wire `.git/hooks`
+(e.g. a custom global `core.hooksPath`), `make setup` prints a `NOTICE`
+instead of failing — see [ADR 0009](docs/adr/0009-local-pre-commit-gates-and-cve-scanning.md).
 
 `make verify` runs, in order:
 

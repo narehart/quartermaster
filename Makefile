@@ -5,6 +5,8 @@ setup:
 	command -v shellcheck >/dev/null 2>&1 || brew install shellcheck
 	command -v shfmt >/dev/null 2>&1 || brew install shfmt
 	command -v gitleaks >/dev/null 2>&1 || brew install gitleaks
+	command -v lefthook >/dev/null 2>&1 || brew install lefthook
+	@lefthook install || echo "NOTICE: lefthook install did not wire .git/hooks (e.g. a custom core.hooksPath) — see lefthook.yml"
 
 format:
 	ruff format .

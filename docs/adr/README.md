@@ -18,6 +18,7 @@ told not to break it.
 - [0006 — Unified tool policy](0006-unified-tool-policy.md)
 - [0007 — Govern built-in agents](0007-govern-builtin-agents.md)
 - [0008 — Orchestrator has no web I/O](0008-orchestrator-no-web-io.md)
+- [0009 — Local pre-commit gates and CVE scanning](0009-local-pre-commit-gates-and-cve-scanning.md)
 
 ## Adding a new ADR
 
