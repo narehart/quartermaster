@@ -45,8 +45,11 @@ if command -v claude >/dev/null 2>&1; then
   echo "  adding marketplace from this repo..."
   claude plugin marketplace add "$SCRIPT_DIR" || echo "  (marketplace already added — continuing)"
   echo "  installing quartermaster@quartermaster-marketplace..."
-  claude plugin install quartermaster@quartermaster-marketplace \
-    || { echo "  (already installed — updating instead)"; claude plugin update quartermaster@quartermaster-marketplace || true; }
+  claude plugin install quartermaster@quartermaster-marketplace ||
+    {
+      echo "  (already installed — updating instead)"
+      claude plugin update quartermaster@quartermaster-marketplace || true
+    }
 else
   echo "  NOTE: 'claude' CLI not on PATH — install the plugin manually in Claude Code:"
   echo "    /plugin marketplace add $SCRIPT_DIR"
@@ -65,7 +68,7 @@ for a in orchestrator scout mechanic builder Explore general-purpose claude-code
   f="$CLAUDE_DIR/agents/$a.md"
   [ -f "$f" ] && mv "$f" "$BACKUP/agents/" && echo "  moved legacy agent: agents/$a.md"
 done
-[ -f "$CLAUDE_DIR/hooks/enforce-agent-model.py" ] && \
+[ -f "$CLAUDE_DIR/hooks/enforce-agent-model.py" ] &&
   mv "$CLAUDE_DIR/hooks/enforce-agent-model.py" "$BACKUP/" && echo "  moved legacy hooks/enforce-agent-model.py"
 rmdir "$BACKUP/agents" 2>/dev/null || true
 rmdir "$BACKUP" 2>/dev/null && echo "  (no legacy files found)" || echo "  legacy files backed up in: $(basename "$BACKUP")"
@@ -75,7 +78,7 @@ rmdir "$BACKUP" 2>/dev/null && echo "  (no legacy files found)" || echo "  legac
 #     headless enumeration if you have MCP servers, so it can take a minute.
 if command -v python3 >/dev/null 2>&1; then
   echo "  generating agents + classifying MCP tools (may take a minute if you have MCP servers)..."
-  python3 "$SCRIPT_DIR/scripts/classify-mcp.py" --templates "$SCRIPT_DIR/templates" --agents "$CLAUDE_DIR/agents" --force || \
+  python3 "$SCRIPT_DIR/scripts/classify-mcp.py" --templates "$SCRIPT_DIR/templates" --agents "$CLAUDE_DIR/agents" --force ||
     echo "  (classifier had trouble — agents still generated from templates; re-runs at each SessionStart)"
 else
   echo "  WARNING: python3 not found — agents not generated; install python3 and re-run."
@@ -83,7 +86,10 @@ fi
 
 # 4. patch settings.json: main-thread agent, permission backstop, strip legacy hooks
 if [ -f "$SETTINGS" ]; then
-  command -v jq >/dev/null || { echo "  ERROR: jq required to patch settings.json"; exit 1; }
+  command -v jq >/dev/null || {
+    echo "  ERROR: jq required to patch settings.json"
+    exit 1
+  }
   tmp="$(mktemp)"
   jq '
     .agent = "orchestrator"
@@ -96,8 +102,12 @@ if [ -f "$SETTINGS" ]; then
         | (if .SubagentStop  then .SubagentStop  |= map(select(((.hooks // [])|any((.command // "")|test("subagent-stops.jsonl")))|not))    else . end)
       ) | .hooks |= with_entries(select((.value|length) > 0))
       else . end
-  ' "$SETTINGS" > "$tmp"
-  jq -e . "$tmp" >/dev/null || { echo "  ERROR: produced invalid JSON, aborting (settings.json untouched)"; rm -f "$tmp"; exit 1; }
+  ' "$SETTINGS" >"$tmp"
+  jq -e . "$tmp" >/dev/null || {
+    echo "  ERROR: produced invalid JSON, aborting (settings.json untouched)"
+    rm -f "$tmp"
+    exit 1
+  }
   mv "$tmp" "$SETTINGS"
   echo "  patched settings.json: agent=orchestrator, permission asks added, legacy hooks removed"
 fi

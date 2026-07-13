@@ -1,0 +1,40 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PTH", "RUF", "S", "TID", "PIE", "RET"]
+# S603 ("subprocess call: check for execution of untrusted input") fires on every
+# subprocess.run/Popen call whose argv isn't 100% string literals -- which is every
+# call in this plugin, since classify-mcp.py's whole job is launching the user's own
+# configured MCP stdio servers and the `claude` CLI with dynamic argv. There is no
+# per-call fix that isn't a suppression in disguise; downgraded project-wide here
+# instead of inline `# noqa`s at every call site.
+ignore = ["S603"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.11"
+include = ["scripts", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=scripts --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["scripts"]
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version = "0.5.1"
+update_changelog_on_bump = true
+version_files = [
+    ".claude-plugin/plugin.json:version",
+]
