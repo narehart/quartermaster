@@ -2,6 +2,13 @@
 
 All notable changes to Quartermaster. Versions follow [semver](https://semver.org).
 
+## [0.6.1] — 2026-07-13
+
+### Changed
+- The orchestrator no longer holds `WebFetch`/`WebSearch` — web research is
+  now delegated to `scout`, consistent with the orchestrator's existing
+  no-I/O principle (it already held no MCP tools). See ADR 0008.
+
 ## [0.6.0] — 2026-07-13
 
 ### Added — govern built-in agents
