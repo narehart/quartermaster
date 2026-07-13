@@ -53,6 +53,12 @@ instead of failing — see [ADR 0009](docs/adr/0009-local-pre-commit-gates-and-c
 
 All gates must be green before you open a PR; CI runs the same `make verify`.
 
+CI also runs a separate `osv-scan` job (not part of `make verify`, since it
+needs network access): `osv-scanner` CVE scanning against the
+actually-installed dependency set (`pip freeze`), rather than the loose
+`requirements-dev.txt` — see
+[ADR 0009](docs/adr/0009-local-pre-commit-gates-and-cve-scanning.md) for why.
+
 ## Invariants — never break these
 
 1. **Orchestrator hard-denial.** `classify_builtins` in `scripts/

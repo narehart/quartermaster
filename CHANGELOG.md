@@ -17,13 +17,11 @@ All notable changes to Quartermaster. Versions follow [semver](https://semver.or
 - `.gitignore` now defensively excludes `.env` and `.env.*`, so a local env
   file can't be accidentally committed even though none is currently
   tracked or required by the project.
-
-### Deferred
-- Evaluated adding `osv-scanner` CVE scanning of `requirements-dev.txt` to
-  CI; deferred pending remediation of a flagged advisory in an unpinned
-  transitive dependency (`pygments`, pulled in by `pytest`'s `>=2.7.2`
-  constraint) — see ADR 0009 for details. Not wired into CI or the
-  branch-protection ruleset yet.
+- `osv-scanner` CVE scanning now runs in CI (new `osv-scan` job in
+  [ci.yml](.github/workflows/ci.yml)), scanning the actually-installed
+  dependency set (`pip freeze`) rather than the loose
+  `requirements-dev.txt`, which otherwise resolves an unpinned transitive
+  `pygments` range to a vulnerable phantom floor version. See ADR 0009.
 
 ## [0.6.1] — 2026-07-13
 
