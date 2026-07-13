@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SELF="tools/check-suppressions.sh"
+HOOK_EXCLUDE=".claude/hooks/block-inline-suppressions.sh"
 
 cd "$REPO_ROOT"
 
@@ -27,6 +28,7 @@ found=0
 
 for f in "${files[@]}"; do
   [ "$f" = "$SELF" ] && continue
+  [ "$f" = "$HOOK_EXCLUDE" ] && continue
   for p in "${patterns[@]}"; do
     while IFS= read -r line; do
       [ -z "$line" ] && continue
