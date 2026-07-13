@@ -4,3 +4,11 @@
 # may still encounter these on a machine that never re-ran the installer)
 *.tokenwise-bak-*
 .tokenwise-legacy-backup-*
+
+# python dev tooling
+.venv/
+.coverage
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/

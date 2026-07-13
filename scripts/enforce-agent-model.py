@@ -11,11 +11,13 @@ session model. Non-roster agents pass through untouched.
 Namespace-robust: a plugin agent may arrive as "quartermaster:scout"; we match on
 the bare name after the last ':'.
 """
+
 import json
 import sys
+from typing import Any
 
-TIER = {
-    "orchestrator": None,      # runs at the session model on purpose (it's the brain)
+TIER: dict[str, str | None] = {
+    "orchestrator": None,  # runs at the session model on purpose (it's the brain)
     "scout": "haiku",
     "mechanic": "haiku",
     "builder": "sonnet",
@@ -25,29 +27,45 @@ TIER = {
     "claude-code-guide": "haiku",
 }
 
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
 
-if data.get("tool_name") not in ("Agent", "Task"):
-    sys.exit(0)
+def decide(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Compute the PreToolUse hook decision for one payload, or None to pass
+    through untouched (non-Agent/Task tool calls, non-roster agents, and
+    already-correctly-pinned calls)."""
+    if payload.get("tool_name") not in ("Agent", "Task"):
+        return None
 
-tool_input = dict(data.get("tool_input") or {})
-raw = tool_input.get("subagent_type", "") or ""
-bare = raw.split(":")[-1].strip().lower()   # quartermaster:scout -> scout
+    tool_input: dict[str, Any] = dict(payload.get("tool_input") or {})
+    raw = tool_input.get("subagent_type", "") or ""
+    bare = raw.split(":")[-1].strip().lower()  # quartermaster:scout -> scout
 
-if bare not in TIER:
-    sys.exit(0)
-want = TIER[bare]
-if want is None or tool_input.get("model") == want:
-    sys.exit(0)
+    if bare not in TIER:
+        return None
+    want = TIER[bare]
+    if want is None or tool_input.get("model") == want:
+        return None
 
-tool_input["model"] = want
-print(json.dumps({
-    "hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "updatedInput": tool_input,
-    },
-    "systemMessage": f"quartermaster: pinned {raw} to {want}",
-}))
+    tool_input["model"] = want
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "updatedInput": tool_input,
+        },
+        "systemMessage": f"quartermaster: pinned {raw} to {want}",
+    }
+
+
+def main() -> None:
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        sys.exit(0)
+
+    result = decide(payload)
+    if result is None:
+        sys.exit(0)
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()

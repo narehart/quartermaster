@@ -17,7 +17,10 @@ if command -v claude >/dev/null 2>&1; then
 fi
 
 if [ -f "$SETTINGS" ]; then
-  command -v jq >/dev/null || { echo "  ERROR: jq required"; exit 1; }
+  command -v jq >/dev/null || {
+    echo "  ERROR: jq required"
+    exit 1
+  }
   cp "$SETTINGS" "$SETTINGS.quartermaster-bak-$STAMP"
   tmp="$(mktemp)"
   jq '
@@ -26,8 +29,12 @@ if [ -f "$SETTINGS" ]; then
         .permissions.ask |= map(select(. as $r | ["Agent(model:opus)","Agent(model:claude-opus-*)","Agent(model:fable)","Agent(model:claude-fable-*)"] | index($r) | not))
         | (if (.permissions.ask|length)==0 then del(.permissions.ask) else . end)
       else . end
-  ' "$SETTINGS" > "$tmp"
-  jq -e . "$tmp" >/dev/null || { echo "  ERROR: invalid JSON, aborting"; rm -f "$tmp"; exit 1; }
+  ' "$SETTINGS" >"$tmp"
+  jq -e . "$tmp" >/dev/null || {
+    echo "  ERROR: invalid JSON, aborting"
+    rm -f "$tmp"
+    exit 1
+  }
   mv "$tmp" "$SETTINGS"
   echo "  reverted settings.json (backup: $(basename "$SETTINGS").quartermaster-bak-$STAMP)"
 fi
