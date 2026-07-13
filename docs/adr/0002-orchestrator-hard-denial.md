@@ -8,7 +8,7 @@ Accepted
 
 ADR 0001 establishes that the orchestrator should never implement. A policy
 that only says "please delegate" is not durable: prompts drift, defaults
-change, and a future built-in tool or a permissive `mcp-policy.json` override
+change, and a future built-in tool or a permissive `tools.json` override
 could hand the orchestrator an implementation tool without anyone noticing
 until it's used.
 
@@ -21,7 +21,7 @@ The orchestrator's inability to implement is enforced twice, structurally:
    `Edit`/`Write`/`Bash`, and no MCP tools at all.
 2. **Defensive subtraction in code.** `classify_builtins()` in
    `scripts/classify-mcp.py` computes the orchestrator's built-in tool grant
-   from `BUILTIN_TIERS` and any `mcp-policy.json` `builtins` override, then
+   from `BUILTIN_TIERS` and any `tools.json` `builtins`/`tools` override, then
    as its *last* step subtracts `HARD_DENIED_ORCHESTRATOR_TOOLS` (`Edit`,
    `Write`, `MultiEdit`, `NotebookEdit`, `Bash`) from that result —
    unconditionally, regardless of what the map or an override said. This is

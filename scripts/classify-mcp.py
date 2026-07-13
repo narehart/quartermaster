@@ -54,7 +54,8 @@ HOME = Path.home()
 STATE_DIR = HOME / ".claude" / "quartermaster"
 CACHE = STATE_DIR / "cache.json"
 ROUTING = STATE_DIR / "TOOL-ROUTING.md"
-POLICY = STATE_DIR / "mcp-policy.json"
+POLICY = STATE_DIR / "tools.json"
+LEGACY_POLICY = STATE_DIR / "mcp-policy.json"  # pre-0.6.0 filename, read as a fallback
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Connection-race constants. Some MCP servers (e.g. a plugin-provided `slack`)
@@ -621,24 +622,69 @@ def enumerate_tools(
 
 
 def load_policy() -> dict[str, Any]:
+    """Read the unified tool policy from `tools.json`. If it doesn't exist but
+    a pre-0.6.0 `mcp-policy.json` does, read that instead -- a name-only
+    rename shouldn't strand anyone's existing overrides."""
     if POLICY.exists():
         return _read_json(POLICY) or {}
+    if LEGACY_POLICY.exists():
+        return _read_json(LEGACY_POLICY) or {}
     return {}
 
 
+AGENT_NAMES = {"orchestrator", "scout", "mechanic", "builder"}
+
+
+def resolve_override(value: str, policy: dict[str, Any]) -> tuple[bool, str | None]:
+    """Resolve a single policy override VALUE (e.g. "read", "builder", "skip")
+    to (matched, agent) -- shared by assign() and classify_builtins() so an
+    override on an MCP tool, an MCP server, or a built-in tool name all use
+    identical semantics:
+      - a TIER KEYWORD (a key in policy["tiers"], default {"read": "scout",
+        "write": "mechanic"}) resolves through that tier map;
+      - a literal AGENT NAME ("orchestrator"/"scout"/"mechanic"/"builder")
+        targets that agent directly, letting a policy send ANY tool to ANY
+        agent, not just tier-keyword-shaped values;
+      - "skip" drops the tool entirely (matched=True, agent=None).
+    matched=False means `value` matched none of the above -- the caller
+    should fall through to its own tier-based default instead of guessing."""
+    tiers = policy.get("tiers") or {"read": "scout", "write": "mechanic"}
+    if value in tiers:
+        return True, tiers[value]
+    if value in AGENT_NAMES:
+        return True, value
+    if value == "skip":
+        return True, None
+    return False, None
+
+
 def assign(tools: list[dict[str, Any]], policy: dict[str, Any]) -> dict[str, list[str]]:
+    """Classify every enumerated MCP tool into a target agent.
+
+    Lookup order per tool: policy["tools"][name] -> policy["servers"][server]
+    -> the tool's own reported tier -> default "write". Whatever value that
+    lookup produces is resolved via resolve_override() -- a tier keyword, a
+    direct agent name (so a policy can target orchestrator/scout/mechanic/
+    builder, not just read/write), or "skip". An unrecognized value falls
+    back through policy["tiers"] the same way the no-override default does,
+    defaulting to "mechanic" if even that doesn't resolve.
+
+    Returns {"orchestrator": [...], "scout": [...], "mechanic": [...],
+    "builder": [...]}."""
     tiers = policy.get("tiers", {"read": "scout", "write": "mechanic"})
-    tool_over = policy.get("tools", {})  # {full_name: read|write|skip}
-    server_over = policy.get("servers", {})  # {server: read|write|skip}
-    out: dict[str, list[str]] = {"scout": [], "mechanic": []}
+    tool_over = policy.get("tools", {})  # {full_name: tier|agent|skip}
+    server_over = policy.get("servers", {})  # {server: tier|agent|skip}
+    out: dict[str, list[str]] = {"orchestrator": [], "scout": [], "mechanic": [], "builder": []}
     for t in tools:
         name = t.get("name", "")
         parts = name.split("__")
         server = parts[1] if len(parts) >= 3 else ""
-        tier = tool_over.get(name) or server_over.get(server) or (t.get("tier") or "write")
-        if tier == "skip":
+        value = tool_over.get(name) or server_over.get(server) or (t.get("tier") or "write")
+        matched, agent = resolve_override(value, policy)
+        if not matched:
+            agent = tiers.get(value, "mechanic")
+        if agent is None:  # "skip"
             continue
-        agent = tiers.get(tier, "mechanic")
         out.setdefault(agent, []).append(name)
     for k in out:
         out[k] = sorted(set(out[k]))
@@ -709,8 +755,14 @@ def classify_builtins(
     """Assign observed deferred BUILT-IN tool names (non-mcp__) to agents.
 
     Precedence per name:
-      1. policy["builtins"][name] -- explicit override, single agent, replaces
-         whatever BUILTIN_TIERS says for that name.
+      1. An explicit override for that name in either policy["builtins"]
+         (back-compat alias, checked first) or policy["tools"] (the unified
+         key -- so a built-in like "WebSearch" can be tiered the same way an
+         MCP tool is). The override VALUE is resolved via resolve_override(),
+         the same helper assign() uses -- a tier keyword, a direct agent name
+         (any of orchestrator/scout/mechanic/builder), or "skip". A value that
+         resolve_override() can't match falls through to BUILTIN_TIERS/unknown
+         below, same as if there were no override at all.
       2. BUILTIN_TIERS -- curated default; a name may land on several agents.
       3. Unknown (observed but in neither of the above) -- granted ONLY to
          mechanic, and reported back separately so it can be surfaced in
@@ -721,7 +773,8 @@ def classify_builtins(
 
     Returns ({"orchestrator":[...], "scout":[...], "mechanic":[...],
     "builder":[...]}, sorted_unknown_names)."""
-    overrides = policy.get("builtins", {})
+    builtin_overrides = policy.get("builtins", {})
+    tool_overrides = policy.get("tools", {})
     out: dict[str, set[str]] = {
         "orchestrator": set(),
         "scout": set(),
@@ -730,11 +783,13 @@ def classify_builtins(
     }
     unknown: set[str] = set()
     for name in builtin_names or []:
-        if name in overrides:
-            agent = overrides[name]
-            if agent in out:
-                out[agent].add(name)
-            continue
+        override = builtin_overrides.get(name, tool_overrides.get(name))
+        if override is not None:
+            matched, agent = resolve_override(override, policy)
+            if matched:
+                if agent is not None and agent in out:
+                    out[agent].add(name)
+                continue  # explicit override handled (including "skip" -> no agent at all)
         agents_for_name = [a for a, names in BUILTIN_TIERS.items() if name in names]
         if agents_for_name:
             for a in agents_for_name:
@@ -749,9 +804,10 @@ def classify_builtins(
 def generate_agents(
     mcp_assignment: dict[str, list[str]], builtin_assignment: dict[str, list[str]]
 ) -> None:
-    """mcp_assignment: {"scout":[...], "mechanic":[...]} from assign().
-    builtin_assignment: {"orchestrator":[...], "scout":[...], "mechanic":[...],
-    "builder":[...]} from classify_builtins(). Both are appended onto each
+    """mcp_assignment: {"orchestrator":[...], "scout":[...], "mechanic":[...],
+    "builder":[...]} from assign(). builtin_assignment: {"orchestrator":[...],
+    "scout":[...], "mechanic":[...], "builder":[...]} from classify_builtins().
+    Both are appended onto each
     template's existing `tools:` line, skipping any name already present
     there so nothing is duplicated."""
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -800,7 +856,7 @@ def write_routing(
     from MCP tools.
     unknown_builtins: sorted names classify_builtins() couldn't match in
     BUILTIN_TIERS and fell to the mechanic-only safe default -- surfaced here
-    so they can be reclassified via mcp-policy.json's "builtins" key."""
+    so they can be reclassified via tools.json's "builtins" (or "tools") key."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     by_server: dict[str, dict[str, int]] = {}
     for t in tools:
@@ -852,7 +908,7 @@ def write_routing(
             else:
                 why = (
                     "no tools (connected but enumerated 0); declare a tier in "
-                    "mcp-policy.json if expected"
+                    "tools.json if expected"
                 )
             lines.append(f"- {s['name']} — {why}.")
 
@@ -894,7 +950,7 @@ def write_routing(
         "Task*/Cron*, LSP, NotebookEdit, worktree tools, ...) -- observed via "
         "session-transcript `deferred_tools_delta` records, classified by "
         "`BUILTIN_TIERS` (a tool may be granted to more than one agent), and "
-        "overridable per-name via mcp-policy.json's `builtins` key. The "
+        "overridable per-name via tools.json's `builtins`/`tools` keys. The "
         "orchestrator can never hold Edit/Write/MultiEdit/NotebookEdit/Bash, "
         "regardless of map or override.\n"
     )
@@ -909,7 +965,7 @@ def write_routing(
         lines.append(
             "Observed in session transcripts but not in `BUILTIN_TIERS` -- granted "
             "ONLY to mechanic as a safe default (never auto-granted to the "
-            "orchestrator). Reclassify via `mcp-policy.json`'s `builtins` key, "
+            "orchestrator). Reclassify via `tools.json`'s `builtins` (or `tools`) key, "
             'e.g. `{"builtins": {"' + unknown_builtins[0] + '": "scout"}}`.\n'
         )
         for n in unknown_builtins:
@@ -988,6 +1044,24 @@ def main() -> None:
 
     assignment = assign(tools, policy)
     builtin_assignment, unknown_builtins = classify_builtins(builtin_names, policy)
+
+    # Belt-and-suspenders: subtract HARD_DENIED_ORCHESTRATOR_TOOLS once more
+    # from the orchestrator's FINAL, COMBINED tool set (MCP assignment +
+    # builtin assignment), right before it's written into the generated agent
+    # file / TOOL-ROUTING.md. classify_builtins() already does this
+    # unconditionally as its own last step; this is a second, independent
+    # guard applied at the point where the two assignments are actually
+    # combined, so a policy can never claw one of these tools back for the
+    # orchestrator no matter which dict (or a future third source) it rode in
+    # on. HARD_DENIED_ORCHESTRATOR_TOOLS are all built-in names (never
+    # mcp__-prefixed), so the assignment-side subtraction is a no-op today --
+    # kept anyway since assign() can now target "orchestrator" too.
+    assignment["orchestrator"] = sorted(
+        set(assignment.get("orchestrator", [])) - HARD_DENIED_ORCHESTRATOR_TOOLS
+    )
+    builtin_assignment["orchestrator"] = sorted(
+        set(builtin_assignment.get("orchestrator", [])) - HARD_DENIED_ORCHESTRATOR_TOOLS
+    )
 
     if "--print" in sys.argv:
         write_routing(tools, assignment, servers, needs_auth, builtin_assignment, unknown_builtins)

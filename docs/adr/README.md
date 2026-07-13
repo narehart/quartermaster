@@ -15,6 +15,7 @@ told not to break it.
 - [0003 — Least-privilege MCP tiering](0003-least-privilege-mcp-tiering.md)
 - [0004 — Deterministic enumeration](0004-deterministic-enumeration.md)
 - [0005 — Built-in tool classification](0005-builtin-tool-classification.md)
+- [0006 — Unified tool policy](0006-unified-tool-policy.md)
 
 ## Adding a new ADR
 

@@ -1,0 +1,13 @@
+{
+  "_comment": "OPTIONAL. Copy to ~/.claude/quartermaster/tools.json to override the auto-classifier. Covers ANY tool -- an MCP tool (mcp__server__tool), an MCP server (applies to all its tools), or a built-in tool (e.g. WebSearch). A target value under \"servers\"/\"tools\"/\"builtins\" may be: a tier keyword (a key in \"tiers\", e.g. \"read\" or \"write\"); a direct agent name (\"orchestrator\", \"scout\", \"mechanic\", or \"builder\"); or \"skip\" to drop the tool entirely. Edit/Write/MultiEdit/NotebookEdit/Bash can NEVER be granted to the orchestrator, no matter what this file says -- enforced unconditionally in code. Everything works with NO policy file; this is only for tuning.",
+  "servers": {
+    "some-server": "read",
+    "another-server": "skip"
+  },
+  "tools": {
+    "mcp__some-server__risky_thing": "write",
+    "mcp__some-server__cheap_lookup": "read",
+    "WebSearch": "orchestrator"
+  },
+  "tiers": { "read": "scout", "write": "mechanic" }
+}
