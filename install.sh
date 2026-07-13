@@ -118,7 +118,7 @@ Done. Restart Claude Code so the main-thread agent loads at startup.
 
 Verify:
   claude -p --agent orchestrator "List your exact tool names."
-  -> expect Read/Grep/Glob/Agent/Skill/WebFetch/WebSearch; NO Edit/Write/Bash.
+  -> expect Read/Grep/Glob/Agent/Skill/TodoWrite; NO Edit/Write/Bash, no WebFetch/WebSearch.
 
 Escape hatch for a hands-on session: claude --agent claude
 EOF

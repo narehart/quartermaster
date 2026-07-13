@@ -2,20 +2,22 @@
 
 **Strict cost-tiered agent delegation for Claude Code, now with MCP tool tiering.**
 
-A tool-restricted orchestrator runs your main session: it plans, reviews, and
-delegates — it just can't edit files, run shell, or call MCP tools. It *can*
-call `Read`/`Grep`/`Glob`/`Agent`/`Skill`/`TodoWrite`/`WebFetch`/`WebSearch`,
-plus, once tiered, built-in orchestration tools (`Monitor`, `SendMessage`,
-`Task*`, `Cron*`, plan-mode, MCP-resource reads). It delegates every bit of
-execution to cheap tiered sub-agents. MCP tools are tiered the same way: reads
-to a cheap recon agent, writes to the execution agent — because an MCP call is
-I/O, which the expensive orchestrator shouldn't be doing either.
+A tool-restricted orchestrator runs your main session: it reads and searches
+the codebase to plan and review, invokes skills, and tracks tasks — but it
+can't edit files, run shell, call MCP tools, or fetch/search the web. Research,
+like all other I/O, is delegated: web lookups go to `scout`, which returns a
+summary instead of raw page content. It also gains, once tiered, built-in
+orchestration tools (`Monitor`, `SendMessage`, `Task*`, `Cron*`, plan-mode,
+MCP-resource reads). It delegates every bit of execution to cheap tiered
+sub-agents. MCP tools are tiered the same way: reads to a cheap recon agent,
+writes to the execution agent — because an MCP call is I/O, which the
+expensive orchestrator shouldn't be doing either.
 
 ## Tiers
 
 | Agent | Model | Holds |
 |---|---|---|
-| **orchestrator** (main thread) | inherit (your session model) | Read/Grep/Glob/Agent/Skill/TodoWrite/WebFetch/WebSearch, plus tiered built-in orchestration tools (Monitor, SendMessage, Task\*/Cron\*, plan-mode, MCP-resource reads). **No** Edit/Write/MultiEdit/NotebookEdit/Bash, **no** MCP server tools. Delegates everything. |
+| **orchestrator** (main thread) | inherit (your session model) | Read/Grep/Glob/Agent/Skill/TodoWrite, plus tiered built-in orchestration tools (Monitor, SendMessage, Task\*/Cron\*, plan-mode, MCP-resource reads). **No** Edit/Write/MultiEdit/NotebookEdit/Bash, **no** MCP server tools, **no** WebFetch/WebSearch — web research is delegated to scout. Delegates everything. |
 | **scout** | Haiku | read-only file/code recon + **read-only MCP tools** (list/search/get) |
 | **mechanic** | Haiku | shell + mechanical edits + **write MCP tools** (create/update/send/delete) |
 | **builder** | Sonnet | well-specified implementation, tests, diagnosed fixes |

@@ -284,6 +284,20 @@ def test_classify_builtins_curated_tool_can_grant_multiple_agents(classify_mcp: 
     assert unknown == []
 
 
+def test_classify_builtins_web_tools_excluded_from_orchestrator_by_default(
+    classify_mcp: ModuleType,
+):
+    """WebFetch/WebSearch are I/O: the orchestrator delegates web research to
+    scout, so its default bucket must never contain either -- while scout
+    and mechanic (which still do web work) keep both."""
+    assignment, unknown = classify_mcp.classify_builtins(["WebFetch", "WebSearch"], {})
+    assert "WebFetch" not in assignment["orchestrator"]
+    assert "WebSearch" not in assignment["orchestrator"]
+    assert {"WebFetch", "WebSearch"} <= set(assignment["scout"])
+    assert {"WebFetch", "WebSearch"} <= set(assignment["mechanic"])
+    assert unknown == []
+
+
 def test_classify_builtins_policy_override_replaces_curated_default(classify_mcp: ModuleType):
     # Monitor is curated to orchestrator by default; override it to scout only.
     policy = {"builtins": {"Monitor": "scout"}}

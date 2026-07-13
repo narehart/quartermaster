@@ -17,6 +17,7 @@ told not to break it.
 - [0005 — Built-in tool classification](0005-builtin-tool-classification.md)
 - [0006 — Unified tool policy](0006-unified-tool-policy.md)
 - [0007 — Govern built-in agents](0007-govern-builtin-agents.md)
+- [0008 — Orchestrator has no web I/O](0008-orchestrator-no-web-io.md)
 
 ## Adding a new ADR
 

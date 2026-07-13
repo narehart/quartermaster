@@ -719,8 +719,6 @@ BUILTIN_TIERS: dict[str, list[str]] = {
         "ListMcpResourcesTool",
         "ReadMcpResourceTool",
         "ReadMcpResourceDirTool",
-        "WebFetch",
-        "WebSearch",
     ],
     "scout": [
         "ListMcpResourcesTool",
