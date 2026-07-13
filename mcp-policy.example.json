@@ -1,5 +1,5 @@
 {
-  "_comment": "OPTIONAL. Copy to ~/.claude/tokenwise/mcp-policy.json to override the auto-classifier. Everything works with NO policy file; this is only for tuning.",
+  "_comment": "OPTIONAL. Copy to ~/.claude/quartermaster/mcp-policy.json to override the auto-classifier. Everything works with NO policy file; this is only for tuning.",
   "servers": {
     "some-server": "read",
     "another-server": "skip"

@@ -1,2 +1,6 @@
+*.quartermaster-bak-*
+.quartermaster-legacy-backup-*
+# legacy backup names from the tokenwise -> quartermaster rename (install.sh
+# may still encounter these on a machine that never re-ran the installer)
 *.tokenwise-bak-*
 .tokenwise-legacy-backup-*

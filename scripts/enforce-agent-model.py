@@ -8,7 +8,7 @@ pinned tier, whatever the caller passed. It also pins the built-in agents
 (Explore / general-purpose / claude-code-guide) so they stop inheriting the
 session model. Non-roster agents pass through untouched.
 
-Namespace-robust: a plugin agent may arrive as "tokenwise:scout"; we match on
+Namespace-robust: a plugin agent may arrive as "quartermaster:scout"; we match on
 the bare name after the last ':'.
 """
 import json
@@ -35,7 +35,7 @@ if data.get("tool_name") not in ("Agent", "Task"):
 
 tool_input = dict(data.get("tool_input") or {})
 raw = tool_input.get("subagent_type", "") or ""
-bare = raw.split(":")[-1].strip().lower()   # tokenwise:scout -> scout
+bare = raw.split(":")[-1].strip().lower()   # quartermaster:scout -> scout
 
 if bare not in TIER:
     sys.exit(0)
@@ -49,5 +49,5 @@ print(json.dumps({
         "hookEventName": "PreToolUse",
         "updatedInput": tool_input,
     },
-    "systemMessage": f"tokenwise: pinned {raw} to {want}",
+    "systemMessage": f"quartermaster: pinned {raw} to {want}",
 }))

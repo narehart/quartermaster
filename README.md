@@ -1,4 +1,4 @@
-# TokenWise
+# Quartermaster
 
 **Strict cost-tiered agent delegation for Claude Code, now with MCP tool tiering.**
 
@@ -18,7 +18,7 @@ shouldn't be doing either.
 | **mechanic** | Haiku | shell + mechanical edits + **write MCP tools** (create/update/send/delete) |
 | **builder** | Sonnet | well-specified implementation, tests, diagnosed fixes |
 
-The orchestrator reads `~/.claude/tokenwise/TOOL-ROUTING.md` to know which tier
+The orchestrator reads `~/.claude/quartermaster/TOOL-ROUTING.md` to know which tier
 holds which server's tools.
 
 ## How MCP tiering works
@@ -38,7 +38,7 @@ It re-runs at **SessionStart**, but only does the (Haiku) enumeration call when
 your set of MCP servers actually changed — otherwise it regenerates agents from
 cache. Add or remove an MCP server and the tiering updates itself.
 
-Optional `~/.claude/tokenwise/mcp-policy.json` (see `mcp-policy.example.json`)
+Optional `~/.claude/quartermaster/mcp-policy.json` (see `mcp-policy.example.json`)
 overrides any classification — split a server, move it, or skip it. Not required.
 
 ## Install
@@ -51,18 +51,21 @@ bash install.sh     # installs the plugin via `claude plugin …`, generates the
 ```
 `install.sh` derives its own path and is safe on a fresh machine. First run does
 one headless MCP-classification pass (a minute if you have MCP servers).
+Upgrading from this project's old name, TokenWise? Just run `install.sh` — it
+migrates a prior `tokenwise@tokenwise-marketplace` install and moves the old
+`~/.claude/tokenwise/` state dir to `~/.claude/quartermaster/` automatically.
 
 Verify:
 ```bash
 claude -p --agent orchestrator "List your exact tool names."   # no Edit/Write/Bash
-cat ~/.claude/tokenwise/TOOL-ROUTING.md                         # per-server tiering
+cat ~/.claude/quartermaster/TOOL-ROUTING.md                     # per-server tiering
 ```
 
 ## Upgrade / uninstall
 
 ```bash
-claude plugin update tokenwise@tokenwise-marketplace   # or re-run install.sh
-bash uninstall.sh                                       # reverts settings + removes plugin
+claude plugin update quartermaster@quartermaster-marketplace   # or re-run install.sh
+bash uninstall.sh                                                # reverts settings + removes plugin
 ```
 
 ## Notes & caveats

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TokenWise installer / migrator.
+# Quartermaster installer / migrator.
 #
 # Installs the plugin (marketplace + plugin via the `claude` CLI) AND does the
 # two things a Claude Code plugin cannot do for itself:
@@ -8,7 +8,11 @@
 #   2. adds the Opus/Fable "ask before spawning" permission backstop
 # It also migrates away any previous MANUAL install of this framework (moves the
 # hand-installed agent files + hook aside and strips the duplicated settings
-# hooks the plugin now provides). Safe on a fresh machine (legacy steps no-op).
+# hooks the plugin now provides), and migrates a prior install of this plugin
+# under its old name, tokenwise: uninstalls tokenwise@tokenwise-marketplace,
+# removes the tokenwise-marketplace marketplace, and moves the old
+# ~/.claude/tokenwise state dir to ~/.claude/quartermaster. Safe on a fresh
+# machine (legacy steps no-op).
 #
 # The plugin path is derived from this script's own location — no path to fill in.
 set -euo pipefail
@@ -17,11 +21,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 SETTINGS="$CLAUDE_DIR/settings.json"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP="$CLAUDE_DIR/.tokenwise-legacy-backup-$STAMP"
+BACKUP="$CLAUDE_DIR/.quartermaster-legacy-backup-$STAMP"
 
-echo "TokenWise installer"
+echo "Quartermaster installer"
 echo "  plugin dir: $SCRIPT_DIR"
 echo "  config dir: $CLAUDE_DIR"
+
+# 0. migrate a prior install of this plugin under its old name, tokenwise
+if command -v claude >/dev/null 2>&1; then
+  echo "  migrating any prior tokenwise install..."
+  claude plugin uninstall tokenwise@tokenwise-marketplace || true
+  claude plugin marketplace remove tokenwise-marketplace || true
+fi
+if [ -d "$CLAUDE_DIR/tokenwise" ] && [ ! -e "$CLAUDE_DIR/quartermaster" ]; then
+  mv "$CLAUDE_DIR/tokenwise" "$CLAUDE_DIR/quartermaster"
+  echo "  migrated state dir: ~/.claude/tokenwise -> ~/.claude/quartermaster"
+fi
 
 # 1. install the plugin package via the claude CLI (derived path, idempotent)
 if command -v claude >/dev/null 2>&1; then
@@ -29,19 +44,19 @@ if command -v claude >/dev/null 2>&1; then
   claude plugin validate "$SCRIPT_DIR" || echo "  (validate reported issues — continuing)"
   echo "  adding marketplace from this repo..."
   claude plugin marketplace add "$SCRIPT_DIR" || echo "  (marketplace already added — continuing)"
-  echo "  installing tokenwise@tokenwise-marketplace..."
-  claude plugin install tokenwise@tokenwise-marketplace \
-    || { echo "  (already installed — updating instead)"; claude plugin update tokenwise@tokenwise-marketplace || true; }
+  echo "  installing quartermaster@quartermaster-marketplace..."
+  claude plugin install quartermaster@quartermaster-marketplace \
+    || { echo "  (already installed — updating instead)"; claude plugin update quartermaster@quartermaster-marketplace || true; }
 else
   echo "  NOTE: 'claude' CLI not on PATH — install the plugin manually in Claude Code:"
   echo "    /plugin marketplace add $SCRIPT_DIR"
-  echo "    /plugin install tokenwise@tokenwise-marketplace"
+  echo "    /plugin install quartermaster@quartermaster-marketplace"
 fi
 
 # 2. back up settings.json
 if [ -f "$SETTINGS" ]; then
-  cp "$SETTINGS" "$SETTINGS.tokenwise-bak-$STAMP"
-  echo "  backed up settings.json -> $(basename "$SETTINGS").tokenwise-bak-$STAMP"
+  cp "$SETTINGS" "$SETTINGS.quartermaster-bak-$STAMP"
+  echo "  backed up settings.json -> $(basename "$SETTINGS").quartermaster-bak-$STAMP"
 fi
 
 # 3. move aside legacy manually-installed agents + hook script (plugin/generator own these now)

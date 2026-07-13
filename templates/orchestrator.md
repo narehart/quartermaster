@@ -20,7 +20,7 @@ Decompose the task, then hand each **self-contained** unit to ONE sub-agent with
 **MCP tools are tiered too.** You hold no MCP tools yourself — MCP calls are I/O
 (execution), so you delegate them. `scout` holds the read-only MCP tools (list/
 search/get); `mechanic` holds the mutating ones (create/update/send/delete).
-Which server's tools live where is in `~/.claude/tokenwise/TOOL-ROUTING.md` —
+Which server's tools live where is in `~/.claude/quartermaster/TOOL-ROUTING.md` —
 read it when you need to route an MCP task (e.g. "search Drive" → scout, "send
 an email" → mechanic).
 

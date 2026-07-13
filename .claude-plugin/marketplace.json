@@ -1,11 +1,11 @@
 {
-  "name": "tokenwise-marketplace",
+  "name": "quartermaster-marketplace",
   "owner": {
     "name": "narehart"
   },
   "plugins": [
     {
-      "name": "tokenwise",
+      "name": "quartermaster",
       "source": "./",
       "description": "Strict cost-tiered agent delegation framework (orchestrator + tiered sub-agents + model-pinning hook)."
     }

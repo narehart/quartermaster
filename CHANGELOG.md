@@ -1,6 +1,16 @@
 # Changelog
 
-All notable changes to TokenWise. Versions follow [semver](https://semver.org).
+All notable changes to Quartermaster. Versions follow [semver](https://semver.org).
+
+## [0.5.1] — 2026-07-13
+
+### Fixed
+- Complete the rename to Quartermaster — v0.5.0 shipped with marketplace.json
+  and install.sh still using the old tokenwise plugin/marketplace ids, so a
+  fresh install was still tracked as tokenwise@tokenwise-marketplace. Installs
+  are now tracked as quartermaster@quartermaster-marketplace, and install.sh
+  migrates a prior tokenwise install (uninstalls it, removes the old
+  marketplace, moves ~/.claude/tokenwise -> ~/.claude/quartermaster).
 
 ## [0.4.0] — 2026-07-12
 

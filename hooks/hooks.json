@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/enforce-agent-model.py",
-            "statusMessage": "tokenwise: enforcing cost-tier model pins"
+            "statusMessage": "quartermaster: enforcing cost-tier model pins"
           }
         ]
       }
@@ -18,13 +18,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -n \"${CLAUDE_CODE_SUBAGENT_MODEL:-}\" ]; then printf '{\"systemMessage\":\"⚠️ tokenwise: CLAUDE_CODE_SUBAGENT_MODEL=%s is set — it silently overrides ALL agent model pins\"}' \"$CLAUDE_CODE_SUBAGENT_MODEL\"; fi"
+            "command": "if [ -n \"${CLAUDE_CODE_SUBAGENT_MODEL:-}\" ]; then printf '{\"systemMessage\":\"⚠️ quartermaster: CLAUDE_CODE_SUBAGENT_MODEL=%s is set — it silently overrides ALL agent model pins\"}' \"$CLAUDE_CODE_SUBAGENT_MODEL\"; fi"
           },
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/classify-mcp.py --templates \"${CLAUDE_PLUGIN_ROOT}\"/templates",
             "async": true,
-            "statusMessage": "tokenwise: syncing MCP tool tiers"
+            "statusMessage": "quartermaster: syncing MCP tool tiers"
           }
         ]
       }
