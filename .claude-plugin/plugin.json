@@ -14,5 +14,7 @@
     "subagents"
   ],
   "license": "MIT",
-  "defaultEnabled": true
+  "defaultEnabled": true,
+  "homepage": "https://github.com/narehart/quartermaster",
+  "repository": "https://github.com/narehart/quartermaster"
 }
