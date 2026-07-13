@@ -16,6 +16,7 @@ told not to break it.
 - [0004 — Deterministic enumeration](0004-deterministic-enumeration.md)
 - [0005 — Built-in tool classification](0005-builtin-tool-classification.md)
 - [0006 — Unified tool policy](0006-unified-tool-policy.md)
+- [0007 — Govern built-in agents](0007-govern-builtin-agents.md)
 
 ## Adding a new ADR
 

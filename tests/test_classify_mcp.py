@@ -9,6 +9,7 @@ the task report.
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -762,6 +763,108 @@ def test_generate_agents_leaves_template_untouched_when_nothing_to_add(
 
     classify_mcp.generate_agents({}, {})
     assert (agents / "orchestrator.md").read_text() == original
+
+
+def _write_governed_builtin_templates(templates: Path) -> None:
+    """Minimal Explore.md/general-purpose.md fixtures matching the real
+    templates' shape closely enough to exercise generate_agents()."""
+    body = (
+        "---\nname: {name}\ntools: Read, Grep, Glob, LSP, WebFetch, WebSearch\n"
+        "disallowedTools: Agent, Task, Workflow, Edit, Write, MultiEdit, NotebookEdit, Bash\n"
+        "model: sonnet\n---\nbody\n"
+    )
+    (templates / "Explore.md").write_text(body.format(name="Explore"))
+    (templates / "general-purpose.md").write_text(body.format(name="general-purpose"))
+
+
+def test_generate_agents_writes_explore_and_general_purpose(
+    classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    templates = tmp_path / "templates"
+    agents = tmp_path / "agents"
+    templates.mkdir()
+    _write_governed_builtin_templates(templates)
+    monkeypatch.setattr(classify_mcp, "TEMPLATES", templates)
+    monkeypatch.setattr(classify_mcp, "AGENTS_DIR", agents)
+
+    classify_mcp.generate_agents({}, {})
+
+    assert (agents / "Explore.md").exists()
+    assert (agents / "general-purpose.md").exists()
+
+
+def _tools_line(content: str) -> str:
+    m = re.search(r"^tools:(.*)$", content, flags=re.M)
+    assert m is not None
+    return m.group(1)
+
+
+def _disallowed_line(content: str) -> str:
+    m = re.search(r"^disallowedTools:(.*)$", content, flags=re.M)
+    assert m is not None
+    return m.group(1)
+
+
+def test_generate_agents_explore_and_general_purpose_never_get_write_tools(
+    classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    templates = tmp_path / "templates"
+    agents = tmp_path / "agents"
+    templates.mkdir()
+    _write_governed_builtin_templates(templates)
+    monkeypatch.setattr(classify_mcp, "TEMPLATES", templates)
+    monkeypatch.setattr(classify_mcp, "AGENTS_DIR", agents)
+
+    mcp_assignment = {
+        "scout": ["mcp__gdrive__list_files"],
+        "mechanic": ["mcp__gdrive__delete_file"],
+        "builder": ["mcp__gdrive__write_file"],
+    }
+    builtin_assignment = {
+        "scout": ["ListMcpResourcesTool"],
+        "mechanic": ["NotebookEdit"],
+        "builder": ["NotebookEdit"],
+    }
+    classify_mcp.generate_agents(mcp_assignment, builtin_assignment)
+
+    for name in ("Explore.md", "general-purpose.md"):
+        content = (agents / name).read_text()
+        tools_line = _tools_line(content)
+        for dangerous in ("Edit", "Write", "Bash", "MultiEdit", "NotebookEdit"):
+            assert dangerous not in tools_line, f"{name} tools: line has {dangerous}"
+        assert "mcp__gdrive__delete_file" not in tools_line
+        assert "mcp__gdrive__write_file" not in tools_line
+        disallowed_line = _disallowed_line(content)
+        for required in ("Agent", "Task", "Workflow"):
+            assert required in disallowed_line, f"{name} disallowedTools: missing {required}"
+
+
+def test_generate_agents_explore_and_general_purpose_draw_from_scout_bucket(
+    classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    templates = tmp_path / "templates"
+    agents = tmp_path / "agents"
+    templates.mkdir()
+    _write_governed_builtin_templates(templates)
+    monkeypatch.setattr(classify_mcp, "TEMPLATES", templates)
+    monkeypatch.setattr(classify_mcp, "AGENTS_DIR", agents)
+
+    mcp_assignment = {
+        "scout": ["mcp__gdrive__list_files"],
+        "mechanic": ["mcp__gdrive__delete_file"],
+    }
+    builtin_assignment = {
+        "scout": ["ListMcpResourcesTool"],
+        "mechanic": ["NotebookEdit"],
+    }
+    classify_mcp.generate_agents(mcp_assignment, builtin_assignment)
+
+    for name in ("Explore.md", "general-purpose.md"):
+        tools_line = _tools_line((agents / name).read_text())
+        assert "mcp__gdrive__list_files" in tools_line
+        assert "ListMcpResourcesTool" in tools_line
+        assert "mcp__gdrive__delete_file" not in tools_line
+        assert "NotebookEdit" not in tools_line
 
 
 # ---------------------------------------------------------------------------

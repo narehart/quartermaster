@@ -23,6 +23,15 @@ I/O, which the expensive orchestrator shouldn't be doing either.
 The orchestrator reads `~/.claude/quartermaster/TOOL-ROUTING.md` to know which tier
 holds which server's tools.
 
+Quartermaster also **governs Claude Code's built-in `Explore` and
+`general-purpose` agents**, which otherwise bypass the tiering above:
+upstream `general-purpose` ships with `tools: *` (Edit/Write/Bash *and*
+`Agent`, so it can implement, run shell, and spawn further sub-agents in one
+call) and `Explore` still holds `Bash`. Quartermaster shadows both names with
+restricted, read-only, no-recursion templates (`templates/Explore.md`,
+`templates/general-purpose.md`) drawing only the same read-only tools `scout`
+gets — see [ADR 0007](docs/adr/0007-govern-builtin-agents.md).
+
 ## How tool tiering works
 
 `scripts/classify-mcp.py` enumerates and classifies every MCP tool, then writes

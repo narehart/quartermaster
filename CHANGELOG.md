@@ -4,6 +4,17 @@ All notable changes to Quartermaster. Versions follow [semver](https://semver.or
 
 ## [0.6.0] — 2026-07-13
 
+### Added — govern built-in agents
+- Claude Code's built-in `Explore` and `general-purpose` agents are now
+  shadowed with restricted, read-only, no-recursion templates
+  (`templates/Explore.md`, `templates/general-purpose.md`), closing a bypass
+  where an all-tools `general-purpose` (with `Edit`/`Write`/`Bash`/`Agent`) or
+  an `Explore` with `Bash` could implement or execute completely outside the
+  tiering model. Both draw their generated tools from the same read-only
+  bucket `scout` gets (never `mechanic`/`builder`) and deny
+  `Agent`/`Task`/`Workflow`/`Edit`/`Write`/`MultiEdit`/`NotebookEdit`/`Bash`
+  unconditionally via `disallowedTools`. See ADR 0007.
+
 ### Changed — unified tool policy
 - Policy file renamed `mcp-policy.json` -> `tools.json` (and the shipped
   example `mcp-policy.example.json` -> `tools.example.json`), with the old

@@ -801,22 +801,44 @@ def classify_builtins(
     return {k: sorted(v) for k, v in out.items()}, sorted(unknown)
 
 
+# Which assignment BUCKET each generated agent template draws its appended
+# `tools:` names from. Explore/general-purpose are quartermaster's governed
+# shadows of Claude Code's built-in agents of the same name (see ADR 0007) --
+# they must draw ONLY from the scout (read-only) bucket, never mechanic/
+# builder, so the generated files can never end up holding a write tool
+# regardless of policy. Their `disallowedTools` line (baked into the template
+# itself) denies Agent/Task/Workflow/Edit/Write/MultiEdit/NotebookEdit/Bash
+# unconditionally as the primary guard; this mapping is the defense-in-depth
+# guard on the appended tool SET.
+TEMPLATE_TO_ASSIGNMENT_BUCKET = {
+    "orchestrator": "orchestrator",
+    "scout": "scout",
+    "mechanic": "mechanic",
+    "builder": "builder",
+    "Explore": "scout",
+    "general-purpose": "scout",
+}
+
+
 def generate_agents(
     mcp_assignment: dict[str, list[str]], builtin_assignment: dict[str, list[str]]
 ) -> None:
     """mcp_assignment: {"orchestrator":[...], "scout":[...], "mechanic":[...],
     "builder":[...]} from assign(). builtin_assignment: {"orchestrator":[...],
     "scout":[...], "mechanic":[...], "builder":[...]} from classify_builtins().
-    Both are appended onto each
-    template's existing `tools:` line, skipping any name already present
-    there so nothing is duplicated."""
+    Both are appended onto each template's existing `tools:` line, skipping
+    any name already present there so nothing is duplicated. Iterates
+    TEMPLATE_TO_ASSIGNMENT_BUCKET rather than a hardcoded base-agent list, so
+    Explore/general-purpose (quartermaster's governed shadows of Claude
+    Code's built-in agents of the same name) are generated too -- from the
+    scout bucket only, per that mapping."""
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
-    for base in ["orchestrator", "scout", "mechanic", "builder"]:
+    for base, bucket in TEMPLATE_TO_ASSIGNMENT_BUCKET.items():
         tpl = TEMPLATES / f"{base}.md"
         if not tpl.exists():
             continue
         content = tpl.read_text()
-        add = list(mcp_assignment.get(base, [])) + list(builtin_assignment.get(base, []))
+        add = list(mcp_assignment.get(bucket, [])) + list(builtin_assignment.get(bucket, []))
         m = re.search(r"^tools:(.*)$", content, flags=re.M)
         if add and m:
             existing = {s.strip() for s in m.group(1).split(",") if s.strip()}
