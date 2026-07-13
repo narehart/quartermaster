@@ -10,7 +10,7 @@ files=(
   ".claude-plugin/plugin.json"
   ".claude-plugin/marketplace.json"
   "hooks/hooks.json"
-  "mcp-policy.example.json"
+  "tools.example.json"
 )
 
 status=0

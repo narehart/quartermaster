@@ -2,18 +2,20 @@
 
 **Strict cost-tiered agent delegation for Claude Code, now with MCP tool tiering.**
 
-A tool-restricted orchestrator runs your main session and *cannot implement
-anything itself* — no `Edit`/`Write`/`Bash`, and no MCP tools. It plans,
-reviews, and delegates every bit of execution to cheap tiered sub-agents. MCP
-tools are tiered the same way: reads to a cheap recon agent, writes to the
-execution agent — because an MCP call is I/O, which the expensive orchestrator
-shouldn't be doing either.
+A tool-restricted orchestrator runs your main session: it plans, reviews, and
+delegates — it just can't edit files, run shell, or call MCP tools. It *can*
+call `Read`/`Grep`/`Glob`/`Agent`/`Skill`/`TodoWrite`/`WebFetch`/`WebSearch`,
+plus, once tiered, built-in orchestration tools (`Monitor`, `SendMessage`,
+`Task*`, `Cron*`, plan-mode, MCP-resource reads). It delegates every bit of
+execution to cheap tiered sub-agents. MCP tools are tiered the same way: reads
+to a cheap recon agent, writes to the execution agent — because an MCP call is
+I/O, which the expensive orchestrator shouldn't be doing either.
 
 ## Tiers
 
 | Agent | Model | Holds |
 |---|---|---|
-| **orchestrator** (main thread) | inherit (your session model) | Read/Grep/Glob/Agent/Skill/WebFetch/WebSearch. **No** Edit/Write/Bash, **no** MCP. Delegates everything. |
+| **orchestrator** (main thread) | inherit (your session model) | Read/Grep/Glob/Agent/Skill/TodoWrite/WebFetch/WebSearch, plus tiered built-in orchestration tools (Monitor, SendMessage, Task\*/Cron\*, plan-mode, MCP-resource reads). **No** Edit/Write/MultiEdit/NotebookEdit/Bash, **no** MCP server tools. Delegates everything. |
 | **scout** | Haiku | read-only file/code recon + **read-only MCP tools** (list/search/get) |
 | **mechanic** | Haiku | shell + mechanical edits + **write MCP tools** (create/update/send/delete) |
 | **builder** | Sonnet | well-specified implementation, tests, diagnosed fixes |
@@ -21,12 +23,21 @@ shouldn't be doing either.
 The orchestrator reads `~/.claude/quartermaster/TOOL-ROUTING.md` to know which tier
 holds which server's tools.
 
-## How MCP tiering works
+Quartermaster also **governs Claude Code's built-in `Explore` and
+`general-purpose` agents**, which otherwise bypass the tiering above:
+upstream `general-purpose` ships with `tools: *` (Edit/Write/Bash *and*
+`Agent`, so it can implement, run shell, and spawn further sub-agents in one
+call) and `Explore` still holds `Bash`. Quartermaster shadows both names with
+restricted, read-only, no-recursion templates (`templates/Explore.md`,
+`templates/general-purpose.md`) drawing only the same read-only tools `scout`
+gets — see [ADR 0007](docs/adr/0007-govern-builtin-agents.md).
+
+## How tool tiering works
 
 `scripts/classify-mcp.py` enumerates and classifies every MCP tool, then writes
 the read tools into scout and the write tools into mechanic:
 
-- **stdio servers** (incl. API-key ones like naver): enumerated deterministically
+- **stdio servers** (incl. API-key ones like Brave Search): enumerated deterministically
   by speaking the MCP `tools/list` protocol, launched with each server's
   configured env; classified via `readOnlyHint`/`destructiveHint` annotations
   then name heuristics.
@@ -34,11 +45,14 @@ the read tools into scout and the write tools into mechanic:
   an authenticated headless `claude -p` pass — the only path that has the live
   tokens. (A standalone probe can't auth them; headless can.)
 
+Built-in tools (`Monitor`, `SendMessage`, `LSP`, `NotebookEdit`, …) are
+classified and tiered across the agents too, not just MCP tools.
+
 It re-runs at **SessionStart**, but only does the (Haiku) enumeration call when
 your set of MCP servers actually changed — otherwise it regenerates agents from
 cache. Add or remove an MCP server and the tiering updates itself.
 
-Optional `~/.claude/quartermaster/mcp-policy.json` (see `mcp-policy.example.json`)
+Optional `~/.claude/quartermaster/tools.json` (see `tools.example.json`)
 overrides any classification — split a server, move it, or skip it. Not required.
 
 ## Install
@@ -51,9 +65,6 @@ bash install.sh     # installs the plugin via `claude plugin …`, generates the
 ```
 `install.sh` derives its own path and is safe on a fresh machine. First run does
 one headless MCP-classification pass (a minute if you have MCP servers).
-Upgrading from this project's old name, TokenWise? Just run `install.sh` — it
-migrates a prior `tokenwise@tokenwise-marketplace` install and moves the old
-`~/.claude/tokenwise/` state dir to `~/.claude/quartermaster/` automatically.
 
 Verify:
 ```bash

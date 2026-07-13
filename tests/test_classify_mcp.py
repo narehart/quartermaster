@@ -9,6 +9,7 @@ the task report.
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -216,6 +217,54 @@ def test_assign_dedupes_and_sorts(classify_mcp: ModuleType):
     assert result["scout"] == ["mcp__x__a", "mcp__x__b"]
 
 
+def test_assign_returns_all_four_agent_buckets_even_when_empty(classify_mcp: ModuleType):
+    result = classify_mcp.assign([], {})
+    assert result == {"orchestrator": [], "scout": [], "mechanic": [], "builder": []}
+
+
+def test_assign_tool_override_can_target_builder_directly(classify_mcp: ModuleType):
+    """A tools.json override value isn't limited to read/write/skip -- it can
+    name any agent directly, e.g. routing a specific MCP tool to builder."""
+    tools = [{"name": "mcp__x__complex_thing", "tier": "read"}]
+    policy = {"tools": {"mcp__x__complex_thing": "builder"}}
+    result = classify_mcp.assign(tools, policy)
+    assert result["builder"] == ["mcp__x__complex_thing"]
+    assert result["scout"] == []
+
+
+def test_assign_tier_keyword_override_still_works(classify_mcp: ModuleType):
+    tools = [{"name": "mcp__x__thing", "tier": "write"}]
+    policy = {"tools": {"mcp__x__thing": "read"}}
+    result = classify_mcp.assign(tools, policy)
+    assert result["scout"] == ["mcp__x__thing"]
+    assert result["mechanic"] == []
+
+
+# ---------------------------------------------------------------------------
+# resolve_override -- the helper shared by assign() and classify_builtins()
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_override_tier_keyword(classify_mcp: ModuleType):
+    matched, agent = classify_mcp.resolve_override("read", {})
+    assert (matched, agent) == (True, "scout")
+
+
+def test_resolve_override_direct_agent_name(classify_mcp: ModuleType):
+    matched, agent = classify_mcp.resolve_override("orchestrator", {})
+    assert (matched, agent) == (True, "orchestrator")
+
+
+def test_resolve_override_skip(classify_mcp: ModuleType):
+    matched, agent = classify_mcp.resolve_override("skip", {})
+    assert (matched, agent) == (True, None)
+
+
+def test_resolve_override_unmatched_value_falls_through(classify_mcp: ModuleType):
+    matched, agent = classify_mcp.resolve_override("frobnicate", {})
+    assert (matched, agent) == (False, None)
+
+
 # ---------------------------------------------------------------------------
 # classify_builtins -- including the hard orchestrator-safety invariant
 # ---------------------------------------------------------------------------
@@ -243,6 +292,45 @@ def test_classify_builtins_policy_override_replaces_curated_default(classify_mcp
     assert assignment["orchestrator"] == []
 
 
+def test_classify_builtins_tools_key_targets_orchestrator_for_a_builtin(classify_mcp: ModuleType):
+    """The unified "tools" key works for built-ins too, not just the
+    back-compat "builtins" key -- e.g. sending WebSearch to orchestrator."""
+    policy = {"tools": {"WebSearch": "orchestrator"}}
+    assignment, unknown = classify_mcp.classify_builtins(["WebSearch"], policy)
+    assert assignment["orchestrator"] == ["WebSearch"]
+    assert unknown == []
+
+
+def test_classify_builtins_tools_key_can_target_builder(classify_mcp: ModuleType):
+    policy = {"tools": {"NotebookEdit": "builder"}}
+    assignment, _ = classify_mcp.classify_builtins(["NotebookEdit"], policy)
+    assert assignment["builder"] == ["NotebookEdit"]
+    assert assignment["mechanic"] == []
+
+
+def test_classify_builtins_tier_keyword_override_still_works(classify_mcp: ModuleType):
+    policy = {"builtins": {"SomeNewTool": "read"}}
+    assignment, unknown = classify_mcp.classify_builtins(["SomeNewTool"], policy)
+    assert assignment["scout"] == ["SomeNewTool"]
+    assert unknown == []
+
+
+def test_classify_builtins_skip_drops_tool_entirely(classify_mcp: ModuleType):
+    policy = {"tools": {"WebSearch": "skip"}}
+    assignment, unknown = classify_mcp.classify_builtins(["WebSearch"], policy)
+    assert all("WebSearch" not in v for v in assignment.values())
+    assert unknown == []
+
+
+def test_classify_builtins_builtins_key_takes_precedence_over_tools_key(
+    classify_mcp: ModuleType,
+):
+    policy = {"builtins": {"LSP": "scout"}, "tools": {"LSP": "builder"}}
+    assignment, _ = classify_mcp.classify_builtins(["LSP"], policy)
+    assert assignment["scout"] == ["LSP"]
+    assert "LSP" not in assignment["builder"]
+
+
 def test_classify_builtins_orchestrator_never_gets_hard_denied_tools(classify_mcp: ModuleType):
     """The project's core safety property: no policy override, curated map, or
     unknown-builtin default can ever put Bash/Edit/Write/MultiEdit/NotebookEdit
@@ -259,6 +347,22 @@ def test_classify_builtins_orchestrator_never_gets_hard_denied_tools(classify_mc
     assignment, _ = classify_mcp.classify_builtins(
         ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit"], policy
     )
+    assert assignment["orchestrator"] == []
+    assert set(assignment["orchestrator"]).isdisjoint(classify_mcp.HARD_DENIED_ORCHESTRATOR_TOOLS)
+
+
+def test_classify_builtins_orchestrator_never_gets_hard_denied_tools_via_tools_key(
+    classify_mcp: ModuleType,
+):
+    """Same hard-denial guarantee, but the grant is attempted via the newer
+    unified "tools" key instead of the back-compat "builtins" key."""
+    policy = {
+        "tools": {
+            "Bash": "orchestrator",
+            "Edit": "orchestrator",
+        }
+    }
+    assignment, _ = classify_mcp.classify_builtins(["Bash", "Edit"], policy)
     assert assignment["orchestrator"] == []
     assert set(assignment["orchestrator"]).isdisjoint(classify_mcp.HARD_DENIED_ORCHESTRATOR_TOOLS)
 
@@ -661,6 +765,108 @@ def test_generate_agents_leaves_template_untouched_when_nothing_to_add(
     assert (agents / "orchestrator.md").read_text() == original
 
 
+def _write_governed_builtin_templates(templates: Path) -> None:
+    """Minimal Explore.md/general-purpose.md fixtures matching the real
+    templates' shape closely enough to exercise generate_agents()."""
+    body = (
+        "---\nname: {name}\ntools: Read, Grep, Glob, LSP, WebFetch, WebSearch\n"
+        "disallowedTools: Agent, Task, Workflow, Edit, Write, MultiEdit, NotebookEdit, Bash\n"
+        "model: sonnet\n---\nbody\n"
+    )
+    (templates / "Explore.md").write_text(body.format(name="Explore"))
+    (templates / "general-purpose.md").write_text(body.format(name="general-purpose"))
+
+
+def test_generate_agents_writes_explore_and_general_purpose(
+    classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    templates = tmp_path / "templates"
+    agents = tmp_path / "agents"
+    templates.mkdir()
+    _write_governed_builtin_templates(templates)
+    monkeypatch.setattr(classify_mcp, "TEMPLATES", templates)
+    monkeypatch.setattr(classify_mcp, "AGENTS_DIR", agents)
+
+    classify_mcp.generate_agents({}, {})
+
+    assert (agents / "Explore.md").exists()
+    assert (agents / "general-purpose.md").exists()
+
+
+def _tools_line(content: str) -> str:
+    m = re.search(r"^tools:(.*)$", content, flags=re.M)
+    assert m is not None
+    return m.group(1)
+
+
+def _disallowed_line(content: str) -> str:
+    m = re.search(r"^disallowedTools:(.*)$", content, flags=re.M)
+    assert m is not None
+    return m.group(1)
+
+
+def test_generate_agents_explore_and_general_purpose_never_get_write_tools(
+    classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    templates = tmp_path / "templates"
+    agents = tmp_path / "agents"
+    templates.mkdir()
+    _write_governed_builtin_templates(templates)
+    monkeypatch.setattr(classify_mcp, "TEMPLATES", templates)
+    monkeypatch.setattr(classify_mcp, "AGENTS_DIR", agents)
+
+    mcp_assignment = {
+        "scout": ["mcp__gdrive__list_files"],
+        "mechanic": ["mcp__gdrive__delete_file"],
+        "builder": ["mcp__gdrive__write_file"],
+    }
+    builtin_assignment = {
+        "scout": ["ListMcpResourcesTool"],
+        "mechanic": ["NotebookEdit"],
+        "builder": ["NotebookEdit"],
+    }
+    classify_mcp.generate_agents(mcp_assignment, builtin_assignment)
+
+    for name in ("Explore.md", "general-purpose.md"):
+        content = (agents / name).read_text()
+        tools_line = _tools_line(content)
+        for dangerous in ("Edit", "Write", "Bash", "MultiEdit", "NotebookEdit"):
+            assert dangerous not in tools_line, f"{name} tools: line has {dangerous}"
+        assert "mcp__gdrive__delete_file" not in tools_line
+        assert "mcp__gdrive__write_file" not in tools_line
+        disallowed_line = _disallowed_line(content)
+        for required in ("Agent", "Task", "Workflow"):
+            assert required in disallowed_line, f"{name} disallowedTools: missing {required}"
+
+
+def test_generate_agents_explore_and_general_purpose_draw_from_scout_bucket(
+    classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    templates = tmp_path / "templates"
+    agents = tmp_path / "agents"
+    templates.mkdir()
+    _write_governed_builtin_templates(templates)
+    monkeypatch.setattr(classify_mcp, "TEMPLATES", templates)
+    monkeypatch.setattr(classify_mcp, "AGENTS_DIR", agents)
+
+    mcp_assignment = {
+        "scout": ["mcp__gdrive__list_files"],
+        "mechanic": ["mcp__gdrive__delete_file"],
+    }
+    builtin_assignment = {
+        "scout": ["ListMcpResourcesTool"],
+        "mechanic": ["NotebookEdit"],
+    }
+    classify_mcp.generate_agents(mcp_assignment, builtin_assignment)
+
+    for name in ("Explore.md", "general-purpose.md"):
+        tools_line = _tools_line((agents / name).read_text())
+        assert "mcp__gdrive__list_files" in tools_line
+        assert "ListMcpResourcesTool" in tools_line
+        assert "mcp__gdrive__delete_file" not in tools_line
+        assert "NotebookEdit" not in tools_line
+
+
 # ---------------------------------------------------------------------------
 # write_routing -- STATE_DIR/ROUTING monkeypatched to tmp_path.
 # ---------------------------------------------------------------------------
@@ -708,7 +914,7 @@ def test_write_routing_covers_every_advisory_section(
     assert "still connecting; re-run the classifier once it settles" in content
     assert "failed to connect" in content
     assert "needs authentication per session transcript" in content
-    assert "declare a tier in mcp-policy.json if expected" in content
+    assert "declare a tier in tools.json if expected" in content
     assert "## Built-in tools" in content
     assert "| orchestrator | Monitor |" in content
     assert "### Unknown built-ins (fell to mechanic default)" in content
@@ -827,9 +1033,10 @@ def test_load_servers_skips_malformed_config(
 def test_load_policy_reads_existing_file(
     classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    policy_path = tmp_path / "mcp-policy.json"
+    policy_path = tmp_path / "tools.json"
     policy_path.write_text(json.dumps({"tiers": {"read": "scout"}}))
     monkeypatch.setattr(classify_mcp, "POLICY", policy_path)
+    monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", tmp_path / "mcp-policy.json")
     assert classify_mcp.load_policy() == {"tiers": {"read": "scout"}}
 
 
@@ -837,7 +1044,32 @@ def test_load_policy_missing_file_returns_empty_dict(
     classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(classify_mcp, "POLICY", tmp_path / "missing.json")
+    monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", tmp_path / "also-missing.json")
     assert classify_mcp.load_policy() == {}
+
+
+def test_load_policy_falls_back_to_legacy_filename(
+    classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """tools.json absent, but the pre-0.6.0 mcp-policy.json is still there --
+    it must be read transparently, no manual migration required."""
+    legacy_path = tmp_path / "mcp-policy.json"
+    legacy_path.write_text(json.dumps({"tiers": {"write": "mechanic"}}))
+    monkeypatch.setattr(classify_mcp, "POLICY", tmp_path / "tools.json")
+    monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", legacy_path)
+    assert classify_mcp.load_policy() == {"tiers": {"write": "mechanic"}}
+
+
+def test_load_policy_prefers_new_filename_over_legacy(
+    classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    new_path = tmp_path / "tools.json"
+    legacy_path = tmp_path / "mcp-policy.json"
+    new_path.write_text(json.dumps({"tiers": {"read": "builder"}}))
+    legacy_path.write_text(json.dumps({"tiers": {"read": "scout"}}))
+    monkeypatch.setattr(classify_mcp, "POLICY", new_path)
+    monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", legacy_path)
+    assert classify_mcp.load_policy() == {"tiers": {"read": "builder"}}
 
 
 # ---------------------------------------------------------------------------
@@ -1044,6 +1276,7 @@ def test_main_cache_hit_skips_reenumeration(
     monkeypatch.setattr(classify_mcp, "CACHE", cache_path)
     monkeypatch.setattr(classify_mcp, "ROUTING", state_dir / "TOOL-ROUTING.md")
     monkeypatch.setattr(classify_mcp, "POLICY", tmp_path / "no-policy.json")
+    monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", tmp_path / "no-legacy-policy.json")
     monkeypatch.setattr(classify_mcp, "TEMPLATES", tmp_path / "no-templates")
     monkeypatch.setattr(classify_mcp, "AGENTS_DIR", tmp_path / "agents")
 
@@ -1087,6 +1320,7 @@ def test_main_cache_miss_reenumerates_and_retries_incomplete_servers(
     monkeypatch.setattr(classify_mcp, "CACHE", cache_path)
     monkeypatch.setattr(classify_mcp, "ROUTING", state_dir / "TOOL-ROUTING.md")
     monkeypatch.setattr(classify_mcp, "POLICY", tmp_path / "no-policy.json")
+    monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", tmp_path / "no-legacy-policy.json")
     monkeypatch.setattr(classify_mcp, "TEMPLATES", tmp_path / "no-templates")
     monkeypatch.setattr(classify_mcp, "AGENTS_DIR", tmp_path / "agents")
 
@@ -1153,6 +1387,7 @@ def test_main_print_flag_writes_routing_and_prints_it_without_regenerating_agent
     monkeypatch.setattr(classify_mcp, "CACHE", cache_path)
     monkeypatch.setattr(classify_mcp, "ROUTING", state_dir / "TOOL-ROUTING.md")
     monkeypatch.setattr(classify_mcp, "POLICY", tmp_path / "no-policy.json")
+    monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", tmp_path / "no-legacy-policy.json")
     monkeypatch.setattr(classify_mcp, "AGENTS_DIR", agents_dir)
 
     def _fake_server_hash(

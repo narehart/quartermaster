@@ -22,8 +22,8 @@ has to fail safe on a name it's never seen before.
 `classify_builtins()` in `scripts/classify-mcp.py` assigns each observed
 built-in name to agent(s) with this precedence:
 
-1. An explicit `mcp-policy.json` `builtins` override for that name, if
-   present — single agent, replaces the default.
+1. An explicit `tools.json` `builtins` (or unified `tools`) override for that
+   name, if present — replaces the default.
 2. `BUILTIN_TIERS`, a curated allowlist mapping names to one or more agents
    (e.g. `Monitor`/`SendMessage`/`Task*`/`Cron*` -> orchestrator;
    `NotebookEdit`/worktree tools -> mechanic/builder; `LSP`/`WebFetch`/
@@ -45,4 +45,4 @@ unrecognized tool becomes usable (by mechanic) rather than invisible, without
 ever risking an unreviewed grant to the orchestrator. The cost is that a
 genuinely read-only new built-in sits on the more expensive/less-trusted
 mechanic tier until someone notices it in `TOOL-ROUTING.md`'s unknown-builtins
-section and reclassifies it via `mcp-policy.json`.
+section and reclassifies it via `tools.json`.

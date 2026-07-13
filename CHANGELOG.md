@@ -2,6 +2,39 @@
 
 All notable changes to Quartermaster. Versions follow [semver](https://semver.org).
 
+## [0.6.0] — 2026-07-13
+
+### Added — govern built-in agents
+- Claude Code's built-in `Explore` and `general-purpose` agents are now
+  shadowed with restricted, read-only, no-recursion templates
+  (`templates/Explore.md`, `templates/general-purpose.md`), closing a bypass
+  where an all-tools `general-purpose` (with `Edit`/`Write`/`Bash`/`Agent`) or
+  an `Explore` with `Bash` could implement or execute completely outside the
+  tiering model. Both draw their generated tools from the same read-only
+  bucket `scout` gets (never `mechanic`/`builder`) and deny
+  `Agent`/`Task`/`Workflow`/`Edit`/`Write`/`MultiEdit`/`NotebookEdit`/`Bash`
+  unconditionally via `disallowedTools`. See ADR 0007.
+
+### Changed — unified tool policy
+- Policy file renamed `mcp-policy.json` -> `tools.json` (and the shipped
+  example `mcp-policy.example.json` -> `tools.example.json`), with the old
+  filename read as a transparent fallback when the new one isn't present —
+  no manual migration needed.
+- The policy is generalized so ANY tool — an MCP tool, an MCP server, or a
+  built-in tool (e.g. `WebSearch`) — can be tiered to ANY agent
+  (`orchestrator`/`scout`/`mechanic`/`builder`), not just MCP tools split
+  between scout/mechanic. A shared `resolve_override()` helper interprets
+  every override value the same way, whether it came from `assign()` or
+  `classify_builtins()`: a tier keyword (a key in `tiers`), a direct agent
+  name, or `"skip"`.
+- `classify_builtins()` now honors overrides from either the unified `tools`
+  key or the original `builtins` key (kept as a back-compat alias).
+- Orchestrator hard-denial (`Edit`/`Write`/`MultiEdit`/`NotebookEdit`/`Bash`)
+  is unchanged and still enforced unconditionally in code — now applied
+  twice: once inside `classify_builtins()`, and once more where the MCP and
+  built-in assignments are combined in `main()`, so no policy shape can ever
+  route one of those tools to the orchestrator.
+
 ## [0.5.1] — 2026-07-13
 
 ### Fixed
@@ -29,12 +62,12 @@ All notable changes to Quartermaster. Versions follow [semver](https://semver.or
 - Hard denial enforced in code: the orchestrator can never be granted Edit,
   Write, MultiEdit, NotebookEdit or Bash — not via the map, not via the
   unknown default, not via a policy override (verified by test).
-- Optional `builtins` overrides in mcp-policy.json.
+- Optional `builtins` overrides in tools.json.
 
 ### Note
 - `Monitor` executes a command, so granting it to the orchestrator is a
   deliberate exception to "the orchestrator has no shell". Set
-  `{"builtins": {"Monitor": "mechanic"}}` in mcp-policy.json to keep that
+  `{"builtins": {"Monitor": "mechanic"}}` in tools.json to keep that
   guarantee strict (you lose wake-on-output in the main thread).
 
 ## [0.3.1] — 2026-07-11
@@ -126,7 +159,7 @@ All notable changes to Quartermaster. Versions follow [semver](https://semver.or
 - Agents are now GENERATED into ~/.claude/agents/ from templates (so MCP grants
   can be written into their static frontmatter), regenerated at SessionStart.
   Plugin ships templates + scripts + hooks, not namespaced agents.
-- `mcp-policy.example.json`: optional per-server/per-tool overrides.
+- `tools.example.json`: optional per-server/per-tool overrides.
 
 ### Changed
 - Plugin restructured from "provides namespaced agents" to

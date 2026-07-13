@@ -33,7 +33,7 @@ make verify  # run before every commit/PR
 - `shfmt` — `shfmt -d -i 2` diff-check over the same shell files
 - `config-check` — `tools/check-config.sh`: every JSON config in the plugin
   (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
-  `hooks/hooks.json`, `mcp-policy.example.json`) parses cleanly, plus `claude
+  `hooks/hooks.json`, `tools.example.json`) parses cleanly, plus `claude
   plugin validate .` if the `claude` CLI is on PATH
 - `version-check` — `tools/check-version.sh`: `.claude-plugin/plugin.json`'s
   `version` matches the latest `## [x.y.z]` heading in `CHANGELOG.md`
@@ -51,8 +51,8 @@ All gates must be green before you open a PR; CI runs the same `make verify`.
    (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`) from whatever the
    orchestrator would otherwise be granted, as the last step of that
    function — so the orchestrator is physically unable to implement, even
-   if `BUILTIN_TIERS` or a `mcp-policy.json` override tried to hand it one
-   of those tools. `tests/test_classify_mcp.py` asserts the orchestrator's
+   if `BUILTIN_TIERS` or a `tools.json` override tried to hand it one of
+   those tools. `tests/test_classify_mcp.py` asserts the orchestrator's
    assignment is always disjoint from that set — keep that test passing.
 
 2. **stdlib-only runtime.** Everything under `scripts/*.py` must run using
