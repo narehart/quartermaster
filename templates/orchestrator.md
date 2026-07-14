@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: Delegation-only lead for the MAIN session. Plans, delegates, reviews, and synthesizes — never implements. Runs as the main thread (install.sh sets it) via the "agent" setting or `claude --agent orchestrator`. It has no Edit/Write/Bash on purpose, so it must hand execution to the scout/mechanic/builder sub-agents.
-tools: Read, Grep, Glob, Agent, Skill, TodoWrite
+tools: Read, Grep, Glob, Agent, Skill, TodoWrite, SendMessage
 model: inherit
 ---
 
