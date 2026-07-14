@@ -102,11 +102,25 @@ actually-installed dependency set (`pip freeze`), rather than the loose
    server that returned zero tools this run clobber that server's
    previously-cached tools — it keeps last-known-good per server and only
    replaces a server's tool set when the current run actually produced
-   tools for it. `SessionStart` re-enumeration in `classify-mcp.py`'s
-   `main()` only re-runs the (expensive) enumeration when the
-   `server_hash()` of currently-configured servers has changed since the
-   cached run; otherwise it regenerates agents from cache with no
-   re-enumeration.
+   tools for it. `main()` hands `merge_with_cache` the FULL cached tool
+   union (every server the cache has ever recorded, not just this
+   session's visible set) — never pre-filtered down to "servers configured
+   in this session" — so a project-scoped server invisible in the current
+   session is preserved exactly like a server that simply hasn't changed.
+   `SessionStart` re-enumeration in `classify-mcp.py`'s `main()` tracks a
+   per-server config fingerprint (`server_fingerprint()`/
+   `changed_or_new_servers()`, stored in `cache.json`'s `"servers"` dict
+   alongside each server's `last_seen`) and only re-enumerates servers that
+   are new or whose fingerprint changed since they were last cached — a
+   session in a *different* project (a different visible server set) no
+   longer looks like a wholesale cache miss the way the old whole-set
+   `server_hash()` did, and a server's absence from the visible set is
+   never itself grounds for dropping its grant. Generated agent grants and
+   `TOOL-ROUTING.md` are therefore the UNION of every server the cache has
+   ever seen, across every project; the only way to actually drop a
+   server's cached grant is the explicit `--prune`/`--prune-days` flag
+   (age-based). See
+   [ADR 0010](docs/adr/0010-union-merge-agent-grants.md).
 
 ## Testing
 

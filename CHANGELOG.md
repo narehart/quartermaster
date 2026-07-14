@@ -2,6 +2,37 @@
 
 All notable changes to Quartermaster. Versions follow [semver](https://semver.org).
 
+## [0.7.0] — 2026-07-14
+
+### Added — union-merge agent grants across project-scoped MCP servers
+- Generated agent grants and `TOOL-ROUTING.md` now draw from the UNION of
+  every MCP server the cache has ever recorded, not just the current
+  session's visible set. Fixes a real clobbering incident: a project-scoped
+  server (e.g. `pixellab`, registered in only one project's `.mcp.json`)
+  had its grants vanish from every generated agent whenever a session from
+  a *different* project ran the classifier, since the old whole-set
+  `server_hash()` treated a differing visible-server-set as a wholesale
+  cache miss, and the cache-merge call site pre-filtered cached tools down
+  to "servers configured in this session" before merging — silently
+  dropping any server not visible right now. A grant for a server not
+  configured in the current project is inert (the CLI won't connect it
+  there), so unioning over-grants nothing that actually functions.
+- `cache.json` gains a per-server `"servers"` dict (schema `2`, migrated
+  automatically and losslessly from the old flat-`"tools"` schema) keyed by
+  each server's config fingerprint + `last_seen` timestamp
+  (`server_fingerprint()`/`changed_or_new_servers()`) — only servers that
+  are new or changed since they were last cached are re-enumerated, which
+  also eliminates the cross-project re-enumeration thrash the old
+  whole-set hash caused.
+- New `--prune` flag (default 30 days, `--prune-days N`) drops cache
+  entries — and their tools — for servers not seen in that long; this is
+  now the only way a server's grant is ever actually removed. A missing or
+  unparseable `last_seen` is never pruned.
+- `TOOL-ROUTING.md` gains a "Cached servers (union across projects) — last
+  seen" header table showing every cached server's last-seen time and
+  (when cheaply available) the project it was first seen from.
+- See [ADR 0010](docs/adr/0010-union-merge-agent-grants.md).
+
 ## [0.6.2] — 2026-07-13
 
 ### Added
