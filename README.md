@@ -1,6 +1,6 @@
 # Quartermaster
 
-**Strict cost-tiered agent delegation for Claude Code, now with MCP tool tiering.**
+**Least-privilege tool governance and enforced delegation for Claude Code, with cost-tiered sub-agents and MCP tool tiering.**
 
 A tool-restricted orchestrator runs your main session: it reads and searches
 the codebase to plan and review, invokes skills, and tracks tasks — but it
@@ -91,6 +91,16 @@ bash uninstall.sh                                                # reverts setti
 - **The tradeoff:** every edit and every MCP call routes through a sub-agent.
   Slower on trivial tasks; the point is the orchestrator never over-works.
 - Leaf agents have `disallowedTools: Agent, Task, Workflow` — no recursion.
+- **Cost is not proven to go down.** A preregistered A/B benchmark measured
+  what tiering actually does to spend: it cuts expensive-model (opus)
+  token share by 82.7%, as designed — but net per-task cost was
+  statistically null at a sonnet main thread and **1.39x higher** (a
+  reversal of the hypothesis) at an opus main thread, because delegation
+  overhead roughly doubles total token volume under one-shot, cold-start
+  conditions. Long interactive-session economics (cross-turn caching) are
+  untested. See [docs/benchmarks/2026-07-cost-ab.md](docs/benchmarks/2026-07-cost-ab.md)
+  for the full result, including where Quartermaster measured cheaper (3 of
+  6 opus-experiment tasks) and where it didn't.
 
 ## Security gates
 

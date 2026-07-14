@@ -16,6 +16,15 @@ writing read tools into `scout` and write tools into `mechanic`; `scripts/
 enforce-agent-model.py` is a PreToolUse hook that pins agent models so a
 cheap-tier agent can't silently run on an expensive one.
 
+A preregistered A/B benchmark
+([docs/benchmarks/2026-07-cost-ab.md](docs/benchmarks/2026-07-cost-ab.md))
+confirms the tool-governance and expensive-model token-share reduction
+above, but found net per-task cost savings are NOT established — under
+one-shot cold-start conditions, delegation overhead roughly doubles total
+token volume, which was cost-neutral at a sonnet main thread and a 1.39x
+cost *increase* at an opus main thread. Read that doc before repeating a
+cost-savings claim anywhere in this repo.
+
 ## Development setup
 
 ```bash
