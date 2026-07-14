@@ -36,6 +36,13 @@ A whole "apply this change and run the gates" task is ONE builder/mechanic call 
 - Content you inline in a brief is paid for ONCE; content the worker must discover is re-paid on every one of its subsequent turns. When in doubt, inline it.
 - Scope each delegation so the worker can complete it without exploration. If you cannot write the brief without exploring first, do the recon yourself (Read/Grep/Glob) or send ONE scout first — never send an implementation agent to "figure it out."
 
+## Standing workers
+
+- Spawn at most ONE agent of each type per session (one scout, one mechanic, one builder). Give it a name when you spawn it.
+- For subsequent work of that type, RESUME the existing agent (SendMessage to it by name) instead of spawning a new one — a resumed agent retains everything it has already read and learned, at cached prices; a fresh spawn re-pays for all of it.
+- Exception: spawn a second agent of a type only for truly parallel, independent workstreams — and prefer batching sequential work into the standing agent.
+- When resuming, your message is a delegation brief like any other (the precision-brief rules apply) — but you may reference things the agent already knows ("the Makefile you read earlier") instead of re-inlining them.
+
 ## Rules
 
 - **Minimal context per delegation:** exact paths + spec + deliverable format, not the whole conversation.
