@@ -447,6 +447,307 @@ def test_merge_with_cache_no_duplicate_names(classify_mcp: ModuleType):
 
 
 # ---------------------------------------------------------------------------
+# server_fingerprint / changed_or_new_servers -- union-merge (ADR 0010)
+# ---------------------------------------------------------------------------
+
+
+def test_server_fingerprint_changes_with_status_not_just_name(classify_mcp: ModuleType):
+    connected = {"name": "gdrive", "status": "✔ Connected"}
+    needs_auth = {"name": "gdrive", "status": "! Needs authentication"}
+    assert classify_mcp.server_fingerprint(connected) != classify_mcp.server_fingerprint(needs_auth)
+
+
+def test_server_fingerprint_stable_for_identical_input(classify_mcp: ModuleType):
+    s = {"name": "gdrive", "status": "✔ Connected"}
+    assert classify_mcp.server_fingerprint(s) == classify_mcp.server_fingerprint(dict(s))
+
+
+def test_changed_or_new_servers_new_server_not_in_cache(classify_mcp: ModuleType):
+    current = [{"name": "gdrive", "status": "✔ Connected"}]
+    assert classify_mcp.changed_or_new_servers(current, {}) == {"gdrive"}
+
+
+def test_changed_or_new_servers_unchanged_server_not_flagged(classify_mcp: ModuleType):
+    server = {"name": "gdrive", "status": "✔ Connected"}
+    cache_servers = {"gdrive": {"fingerprint": classify_mcp.server_fingerprint(server)}}
+    assert classify_mcp.changed_or_new_servers([server], cache_servers) == set()
+
+
+def test_changed_or_new_servers_status_change_flags_server(classify_mcp: ModuleType):
+    old_status = {"name": "gdrive", "status": "! Needs authentication"}
+    cache_servers = {"gdrive": {"fingerprint": classify_mcp.server_fingerprint(old_status)}}
+    current = [{"name": "gdrive", "status": "✔ Connected"}]
+    assert classify_mcp.changed_or_new_servers(current, cache_servers) == {"gdrive"}
+
+
+def test_changed_or_new_servers_only_flags_the_changed_one(classify_mcp: ModuleType):
+    """A session that also sees an unrelated, unchanged server must not flag
+    it just because ANOTHER server in the same session changed -- this is
+    the per-server scoping that replaces the old whole-set hash."""
+    unchanged = {"name": "slack", "status": "✔ Connected"}
+    changed_new = {"name": "gdrive", "status": "✔ Connected"}
+    cache_servers = {"slack": {"fingerprint": classify_mcp.server_fingerprint(unchanged)}}
+    result = classify_mcp.changed_or_new_servers([unchanged, changed_new], cache_servers)
+    assert result == {"gdrive"}
+
+
+# ---------------------------------------------------------------------------
+# migrate_cache -- schema migration (never crash, never lose last-known-good
+# tools; see docs/adr/0010-union-merge-agent-grants.md)
+# ---------------------------------------------------------------------------
+
+
+def test_migrate_cache_returns_unchanged_when_already_current_schema(classify_mcp: ModuleType):
+    current = {
+        "schema": classify_mcp.CACHE_SCHEMA,
+        "tools": [{"name": "mcp__gdrive__list", "tier": "read"}],
+        "servers": {"gdrive": {"display": "gdrive", "fingerprint": "abc", "last_seen": "x"}},
+    }
+    assert classify_mcp.migrate_cache(current) is current
+
+
+def test_migrate_cache_buckets_old_flat_tools_by_segment(classify_mcp: ModuleType):
+    """Pre-0.7.0 cache: flat "tools" list, whole-set "hash", no per-server
+    metadata -- must migrate without losing any previously-cached tool, and
+    without inventing a fingerprint it can't know (None, so the server is
+    correctly treated as changed/unverified the next time it's visible)."""
+    old = {
+        "hash": "deadbeef",
+        "tools": [
+            {"name": "mcp__gdrive__list_files", "tier": "read"},
+            {"name": "mcp__pixellab__generate_image", "tier": "write"},
+        ],
+        "needs_auth": ["gdrive"],
+        "builtin_names": ["LSP"],
+    }
+    migrated = classify_mcp.migrate_cache(old)
+    assert migrated["schema"] == classify_mcp.CACHE_SCHEMA
+    assert migrated["tools"] == old["tools"]  # nothing lost
+    assert set(migrated["servers"]) == {"gdrive", "pixellab"}
+    assert migrated["servers"]["gdrive"]["fingerprint"] is None
+    assert migrated["servers"]["pixellab"]["fingerprint"] is None
+    assert migrated["needs_auth"] == ["gdrive"]
+    assert migrated["builtin_names"] == ["LSP"]
+
+
+def test_migrate_cache_handles_empty_or_corrupt_cache(classify_mcp: ModuleType):
+    migrated = classify_mcp.migrate_cache({})
+    assert migrated["schema"] == classify_mcp.CACHE_SCHEMA
+    assert migrated["servers"] == {}
+    assert migrated["tools"] == []
+
+
+# ---------------------------------------------------------------------------
+# prune_cache -- the removal valve for union-merge
+# ---------------------------------------------------------------------------
+
+
+def test_prune_cache_drops_only_stale_servers_and_their_tools(classify_mcp: ModuleType):
+    now = 1_800_000_000.0
+    fresh_ts = classify_mcp.time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ", classify_mcp.time.gmtime(now - 1 * 86400)
+    )
+    stale_ts = classify_mcp.time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ", classify_mcp.time.gmtime(now - 45 * 86400)
+    )
+    cache_servers = {
+        "gdrive": {"display": "gdrive", "last_seen": fresh_ts},
+        "pixellab": {"display": "pixellab", "last_seen": stale_ts},
+    }
+    tools = [
+        {"name": "mcp__gdrive__list_files", "tier": "read"},
+        {"name": "mcp__pixellab__generate_image", "tier": "write"},
+    ]
+    kept_servers, kept_tools, dropped = classify_mcp.prune_cache(
+        cache_servers, tools, prune_days=30, now=now
+    )
+    assert dropped == ["pixellab"]
+    assert set(kept_servers) == {"gdrive"}
+    assert [t["name"] for t in kept_tools] == ["mcp__gdrive__list_files"]
+
+
+def test_prune_cache_never_drops_missing_or_unparseable_last_seen(classify_mcp: ModuleType):
+    cache_servers = {
+        "gdrive": {"display": "gdrive"},  # no last_seen at all
+        "slack": {"display": "slack", "last_seen": "not-a-timestamp"},
+    }
+    kept_servers, _kept_tools, dropped = classify_mcp.prune_cache(
+        cache_servers, [], prune_days=30, now=1_800_000_000.0
+    )
+    assert dropped == []
+    assert set(kept_servers) == {"gdrive", "slack"}
+
+
+def test_prune_cache_default_now_uses_current_time(classify_mcp: ModuleType):
+    """now=None (the default) falls back to time.time() rather than raising."""
+    cache_servers = {"gdrive": {"display": "gdrive", "last_seen": classify_mcp._now_iso()}}
+    kept_servers, _kept_tools, dropped = classify_mcp.prune_cache(cache_servers, [], prune_days=30)
+    assert dropped == []
+    assert "gdrive" in kept_servers
+
+
+# ---------------------------------------------------------------------------
+# _parse_iso / current_project_hint
+# ---------------------------------------------------------------------------
+
+
+def test_parse_iso_valid_and_invalid(classify_mcp: ModuleType):
+    assert classify_mcp._parse_iso("2026-01-01T00:00:00Z") is not None
+    assert classify_mcp._parse_iso("not-a-timestamp") is None
+    assert classify_mcp._parse_iso("") is None
+
+
+def test_current_project_hint_returns_cwd_as_string(
+    classify_mcp: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    assert classify_mcp.current_project_hint() == str(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# main() -- union-merge end-to-end: (a) a cached-but-not-currently-visible
+# server's grant survives a run, (b) a newly-visible server is enumerated and
+# added without dropping any other cached server.
+# ---------------------------------------------------------------------------
+
+
+def _write_cache(
+    cache_path: Path,
+    *,
+    tools: list[dict[str, Any]],
+    servers: dict[str, Any],
+    needs_auth: list[str] | None = None,
+    builtin_names: list[str] | None = None,
+) -> None:
+    cache_path.write_text(
+        json.dumps(
+            {
+                "schema": 2,
+                "tools": tools,
+                "servers": servers,
+                "needs_auth": needs_auth or [],
+                "builtin_names": builtin_names or [],
+            }
+        )
+    )
+
+
+def test_main_union_keeps_grant_for_server_not_visible_this_session(
+    classify_mcp: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    """(a) pixellab is cached from a different project's session and is NOT
+    in this session's `claude mcp list` output at all -- its grant must
+    still appear in the union-generated agents/routing, not be dropped."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    cache_path = state_dir / "cache.json"
+    # only gdrive is visible THIS session
+    visible_servers = [{"name": "gdrive", "status": "✔ Connected"}]
+    gdrive_tools = [{"name": "mcp__gdrive__list_files", "tier": "read"}]
+    pixellab_tools = [{"name": "mcp__pixellab__generate_image", "tier": "write"}]
+    _write_cache(
+        cache_path,
+        tools=gdrive_tools + pixellab_tools,
+        servers={
+            "gdrive": {
+                "display": "gdrive",
+                "fingerprint": classify_mcp.server_fingerprint(visible_servers[0]),
+                "last_seen": "2026-01-01T00:00:00Z",
+                "first_seen_project": "/some/project-a",
+            },
+            "pixellab": {
+                "display": "pixellab",
+                "fingerprint": "some-other-project-fingerprint",
+                "last_seen": "2026-01-05T00:00:00Z",
+                "first_seen_project": "/some/project-b",
+            },
+        },
+    )
+
+    monkeypatch.setattr(classify_mcp, "STATE_DIR", state_dir)
+    monkeypatch.setattr(classify_mcp, "CACHE", cache_path)
+    monkeypatch.setattr(classify_mcp, "ROUTING", state_dir / "TOOL-ROUTING.md")
+    monkeypatch.setattr(classify_mcp, "POLICY", tmp_path / "no-policy.json")
+    monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", tmp_path / "no-legacy-policy.json")
+    monkeypatch.setattr(classify_mcp, "TEMPLATES", tmp_path / "no-templates")
+    monkeypatch.setattr(classify_mcp, "AGENTS_DIR", tmp_path / "agents")
+    monkeypatch.setattr(classify_mcp, "parse_mcp_servers", lambda: visible_servers)
+    monkeypatch.setattr(sys, "argv", ["classify-mcp.py"])
+
+    classify_mcp.main()
+
+    saved = json.loads(cache_path.read_text())
+    names = {t["name"] for t in saved["tools"]}
+    assert "mcp__pixellab__generate_image" in names  # NOT clobbered by this session's view
+    assert "mcp__gdrive__list_files" in names
+    assert "pixellab" in saved["servers"]  # metadata preserved untouched
+    assert saved["servers"]["pixellab"]["last_seen"] == "2026-01-05T00:00:00Z"  # untouched
+    routing = (state_dir / "TOOL-ROUTING.md").read_text()
+    assert "pixellab" in routing
+
+
+def test_main_union_adds_newly_visible_server_without_dropping_others(
+    classify_mcp: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    """(b) a brand-new server appears in this session; enumerating it must
+    not drop the already-cached (and still-visible, unchanged) gdrive grant."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    cache_path = state_dir / "cache.json"
+    gdrive_server = {"name": "gdrive", "status": "✔ Connected"}
+    gdrive_tools = [{"name": "mcp__gdrive__list_files", "tier": "read"}]
+    _write_cache(
+        cache_path,
+        tools=gdrive_tools,
+        servers={
+            "gdrive": {
+                "display": "gdrive",
+                "fingerprint": classify_mcp.server_fingerprint(gdrive_server),
+                "last_seen": "2026-01-01T00:00:00Z",
+                "first_seen_project": None,
+            }
+        },
+    )
+
+    new_server = {"name": "slack", "status": "✔ Connected"}
+    monkeypatch.setattr(classify_mcp, "STATE_DIR", state_dir)
+    monkeypatch.setattr(classify_mcp, "CACHE", cache_path)
+    monkeypatch.setattr(classify_mcp, "ROUTING", state_dir / "TOOL-ROUTING.md")
+    monkeypatch.setattr(classify_mcp, "POLICY", tmp_path / "no-policy.json")
+    monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", tmp_path / "no-legacy-policy.json")
+    monkeypatch.setattr(classify_mcp, "TEMPLATES", tmp_path / "no-templates")
+    monkeypatch.setattr(classify_mcp, "AGENTS_DIR", tmp_path / "agents")
+    monkeypatch.setattr(classify_mcp, "parse_mcp_servers", lambda: [gdrive_server, new_server])
+    monkeypatch.setattr(classify_mcp, "wait_for_settled", lambda: [gdrive_server, new_server])
+
+    def _fake_enumerate_tools(
+        servers: list[dict[str, str]] | None = None,
+        stdio_only_norm: set[str] | None = None,
+    ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+        # only the NEW server ("slack") should have been requested for
+        # re-enumeration -- gdrive's fingerprint hasn't changed
+        assert stdio_only_norm == {"slack"}
+        return [{"name": "mcp__slack__send_message", "tier": "write"}], [], []
+
+    monkeypatch.setattr(classify_mcp, "enumerate_tools", _fake_enumerate_tools)
+    monkeypatch.setattr(sys, "argv", ["classify-mcp.py"])
+
+    classify_mcp.main()
+
+    saved = json.loads(cache_path.read_text())
+    names = {t["name"] for t in saved["tools"]}
+    assert "mcp__slack__send_message" in names  # newly enumerated
+    assert "mcp__gdrive__list_files" in names  # NOT dropped
+    assert set(saved["servers"]) == {"gdrive", "slack"}
+
+
+# ---------------------------------------------------------------------------
 # _transcript_deferred_names
 # ---------------------------------------------------------------------------
 
@@ -1279,10 +1580,23 @@ def test_main_cache_hit_skips_reenumeration(
     cache_path = state_dir / "cache.json"
     servers = [{"name": "gdrive", "status": "✔ Connected"}]
     cached_tools = [{"name": "mcp__gdrive__list_files", "tier": "read"}]
-    fixed_hash = "deadbeef"
+    fingerprint = classify_mcp.server_fingerprint(servers[0])
     cache_path.write_text(
         json.dumps(
-            {"hash": fixed_hash, "tools": cached_tools, "needs_auth": [], "builtin_names": []}
+            {
+                "schema": classify_mcp.CACHE_SCHEMA,
+                "tools": cached_tools,
+                "servers": {
+                    "gdrive": {
+                        "display": "gdrive",
+                        "fingerprint": fingerprint,
+                        "last_seen": "2026-01-01T00:00:00Z",
+                        "first_seen_project": None,
+                    }
+                },
+                "needs_auth": [],
+                "builtin_names": [],
+            }
         )
     )
 
@@ -1294,18 +1608,12 @@ def test_main_cache_hit_skips_reenumeration(
     monkeypatch.setattr(classify_mcp, "TEMPLATES", tmp_path / "no-templates")
     monkeypatch.setattr(classify_mcp, "AGENTS_DIR", tmp_path / "agents")
 
-    def _fake_server_hash(
-        s: list[dict[str, str]] | None = None,
-    ) -> tuple[str, list[dict[str, str]]]:
-        return fixed_hash, s or servers
-
     def _fake_parse_mcp_servers() -> list[dict[str, str]]:
         return servers
 
     def _must_not_be_called(*_a: object, **_k: object) -> None:
         raise AssertionError("cache-hit path must not re-enumerate")
 
-    monkeypatch.setattr(classify_mcp, "server_hash", _fake_server_hash)
     monkeypatch.setattr(classify_mcp, "parse_mcp_servers", _fake_parse_mcp_servers)
     monkeypatch.setattr(classify_mcp, "wait_for_settled", _must_not_be_called)
     monkeypatch.setattr(classify_mcp, "enumerate_tools", _must_not_be_called)
@@ -1316,8 +1624,10 @@ def test_main_cache_hit_skips_reenumeration(
     out = capsys.readouterr().out
     assert "1 MCP tools classified across 1 servers" in out
     saved = json.loads(cache_path.read_text())
-    assert saved["hash"] == fixed_hash
+    assert saved["schema"] == classify_mcp.CACHE_SCHEMA
     assert saved["tools"] == cached_tools
+    # last_seen refreshed for the currently-visible server even on a cache hit
+    assert saved["servers"]["gdrive"]["last_seen"] != "2026-01-01T00:00:00Z"
 
 
 def test_main_cache_miss_reenumerates_and_retries_incomplete_servers(
@@ -1338,18 +1648,12 @@ def test_main_cache_miss_reenumerates_and_retries_incomplete_servers(
     monkeypatch.setattr(classify_mcp, "TEMPLATES", tmp_path / "no-templates")
     monkeypatch.setattr(classify_mcp, "AGENTS_DIR", tmp_path / "agents")
 
-    def _fake_server_hash(
-        s: list[dict[str, str]] | None = None,
-    ) -> tuple[str, list[dict[str, str]]]:
-        return "newhash", settled_servers
-
     def _fake_wait_for_settled() -> list[dict[str, str]]:
         return settled_servers
 
     def _fake_parse_mcp_servers() -> list[dict[str, str]]:
         return settled_servers
 
-    monkeypatch.setattr(classify_mcp, "server_hash", _fake_server_hash)
     monkeypatch.setattr(classify_mcp, "wait_for_settled", _fake_wait_for_settled)
     monkeypatch.setattr(classify_mcp, "parse_mcp_servers", _fake_parse_mcp_servers)
     monkeypatch.setattr(classify_mcp, "RETRY_WAIT", 0)
@@ -1358,6 +1662,7 @@ def test_main_cache_miss_reenumerates_and_retries_incomplete_servers(
 
     def _fake_enumerate_tools(
         servers: list[dict[str, str]] | None = None,
+        stdio_only_norm: set[str] | None = None,
     ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
         call_count["n"] += 1
         if call_count["n"] == 1:
@@ -1375,7 +1680,11 @@ def test_main_cache_miss_reenumerates_and_retries_incomplete_servers(
     out = capsys.readouterr().out
     assert "1 MCP tools classified across 1 servers" in out
     saved = json.loads(cache_path.read_text())
+    assert saved["schema"] == classify_mcp.CACHE_SCHEMA
     assert saved["tools"] == [{"name": "mcp__gdrive__list_files", "tier": "read"}]
+    assert saved["servers"]["gdrive"]["fingerprint"] == classify_mcp.server_fingerprint(
+        settled_servers[0]
+    )
 
 
 def test_main_print_flag_writes_routing_and_prints_it_without_regenerating_agents(
@@ -1389,10 +1698,23 @@ def test_main_print_flag_writes_routing_and_prints_it_without_regenerating_agent
     cache_path = state_dir / "cache.json"
     servers = [{"name": "gdrive", "status": "✔ Connected"}]
     cached_tools = [{"name": "mcp__gdrive__list_files", "tier": "read"}]
-    fixed_hash = "deadbeef"
+    fingerprint = classify_mcp.server_fingerprint(servers[0])
     cache_path.write_text(
         json.dumps(
-            {"hash": fixed_hash, "tools": cached_tools, "needs_auth": [], "builtin_names": []}
+            {
+                "schema": classify_mcp.CACHE_SCHEMA,
+                "tools": cached_tools,
+                "servers": {
+                    "gdrive": {
+                        "display": "gdrive",
+                        "fingerprint": fingerprint,
+                        "last_seen": "2026-01-01T00:00:00Z",
+                        "first_seen_project": None,
+                    }
+                },
+                "needs_auth": [],
+                "builtin_names": [],
+            }
         )
     )
     agents_dir = tmp_path / "agents"
@@ -1404,12 +1726,6 @@ def test_main_print_flag_writes_routing_and_prints_it_without_regenerating_agent
     monkeypatch.setattr(classify_mcp, "LEGACY_POLICY", tmp_path / "no-legacy-policy.json")
     monkeypatch.setattr(classify_mcp, "AGENTS_DIR", agents_dir)
 
-    def _fake_server_hash(
-        s: list[dict[str, str]] | None = None,
-    ) -> tuple[str, list[dict[str, str]]]:
-        return fixed_hash, s or servers
-
-    monkeypatch.setattr(classify_mcp, "server_hash", _fake_server_hash)
     monkeypatch.setattr(classify_mcp, "parse_mcp_servers", lambda: servers)
 
     def _must_not_be_called(

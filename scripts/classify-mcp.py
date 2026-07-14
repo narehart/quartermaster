@@ -24,18 +24,31 @@ headless Claude session (`claude -p --agent claude`) to recite its own
 but is the only option with zero transcript history to mine.
 
 Regenerates agents into ~/.claude/agents/ from templates on each run. Cheap:
-re-enumerates ONLY when the set of configured MCP servers changed since last
-run (transcript replay is fast — no model call in the common case; the
-headless fallback, when it's used, costs one Haiku call); otherwise
-regenerates from cache. Run at SessionStart and on install.
+each CONFIGURED SERVER has its own cache entry (config fingerprint +
+last-seen timestamp), and only servers whose fingerprint is new/changed since
+last run are re-enumerated (transcript replay is fast — no model call in the
+common case; the headless fallback, when it's used, costs one Haiku call).
+Generation draws from the UNION of every server the cache has ever recorded,
+not just the current session's visible set: MCP servers can be
+project-scoped (e.g. registered only in one project's .mcp.json), and a
+per-session (or old whole-set-hash) view would otherwise clobber a
+project-scoped server's grants every time a DIFFERENT project's session runs
+the classifier. A grant for a server not configured in the current project is
+inert (the CLI won't connect it there), so unioning over-grants nothing that
+actually functions. Run `--prune` (default 30 days, `--prune-days N`) to drop
+cache entries for servers not seen in a long time. See
+docs/adr/0010-union-merge-agent-grants.md. Run at SessionStart and on
+install.
 
 Reentrancy: the headless fallback spawns `claude -p`, which fires SessionStart
 again — so this exits immediately if QUARTERMASTER_CLASSIFYING is set, and it sets
 that var for the child. The SessionStart hook also guards on it.
 
 Usage: classify-mcp.py [--templates DIR] [--agents DIR] [--force] [--print]
+                        [--prune] [--prune-days N]
 """
 
+import calendar
 import contextlib
 import hashlib
 import json
@@ -65,6 +78,10 @@ CONNECT_POLL_INTERVAL = 3  # seconds between `claude mcp list` polls
 CONNECT_TIMEOUT = 60  # total seconds to wait for servers to settle
 RETRY_WAIT = 5  # seconds to wait before re-enumerating an incomplete server
 RETRY_MAX = 3  # max re-enumeration attempts for incomplete servers
+
+CACHE_SCHEMA = 2  # bump whenever the on-disk cache shape changes; migrate_cache()
+# upgrades anything older (or unversioned) rather than requiring a manual reset.
+PRUNE_DAYS_DEFAULT = 30  # --prune drops a cached server not seen in this many days
 
 # A single session's transcript can be INCOMPLETE for a server that was still
 # connecting (or simply untouched) at that session's specific start moment --
@@ -156,6 +173,128 @@ def server_hash(
         servers = parse_mcp_servers()
     key = sorted(f"{s['name']}\x01{s['status']}" for s in servers)
     return hashlib.sha256("\n".join(key).encode()).hexdigest(), servers
+
+
+def server_fingerprint(server: dict[str, str]) -> str:
+    """Per-SERVER analogue of server_hash() -- fingerprints just this one
+    server's name+status pair, not the whole configured set. Used to detect,
+    per server, whether it changed since it was last cached, so a session in
+    a DIFFERENT project (a different visible server SET) never makes an
+    unrelated, unchanged server look like a cache miss the way the old
+    whole-set hash did -- that whole-set comparison is exactly what caused
+    project-scoped servers' grants to flap/vanish across projects."""
+    return hashlib.sha256(f"{server['name']}\x01{server['status']}".encode()).hexdigest()
+
+
+def changed_or_new_servers(
+    current: list[dict[str, str]], cache_servers: dict[str, Any]
+) -> set[str]:
+    """_norm()-ed names of every server in `current` whose fingerprint is
+    new or different from what's cached in `cache_servers` (keyed by
+    _norm(display name)). A server absent from `cache_servers` entirely
+    counts as changed (first time seen, or seen long enough ago to have been
+    pruned)."""
+    out: set[str] = set()
+    for s in current:
+        key = _norm(s["name"])
+        entry = cache_servers.get(key)
+        if entry is None or entry.get("fingerprint") != server_fingerprint(s):
+            out.add(key)
+    return out
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _parse_iso(ts: str) -> float | None:
+    """Parse an ISO-8601 UTC timestamp (as written by _now_iso()) to a Unix
+    epoch float, or None if it's missing/malformed -- callers must treat None
+    as "unknown, never prune" rather than guessing an age."""
+    try:
+        return calendar.timegm(time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return None
+
+
+def current_project_hint() -> str | None:
+    """Best-effort project identifier (cwd at enumeration time) for a
+    server's cache entry -- purely informational (surfaced in
+    TOOL-ROUTING.md), never used for cache-key/merge logic. None if cwd is
+    unavailable for any reason."""
+    try:
+        return str(Path.cwd())
+    except Exception:
+        return None
+
+
+def migrate_cache(raw: dict[str, Any]) -> dict[str, Any]:
+    """Migrate an on-disk cache to the current per-server schema, or return it
+    unchanged if it's already current. Never raises, never crashes the run,
+    and never loses last-known-good tools: a pre-0.7.0 cache (flat "tools"
+    list, single whole-set "hash", no per-server metadata at all) has its
+    tools bucketed by server segment into synthetic per-server entries with
+    fingerprint=None -- so the very next time each of those servers is
+    actually visible again it's correctly treated as "changed" and gets one
+    fresh, authoritative re-enumeration, rather than this migration guessing
+    a fingerprint it has no way to know -- and last_seen set to NOW (the
+    migration moment), never to some unknowable past moment (which would risk
+    an immediate `--prune` dropping everything on the very first run of the
+    new code). An empty/corrupt/missing cache migrates to an empty
+    "servers"/"tools" cache, same as a brand-new install."""
+    if raw.get("schema") == CACHE_SCHEMA and isinstance(raw.get("servers"), dict):
+        return raw
+    tools = cast("list[dict[str, Any]]", raw.get("tools") or [])
+    servers: dict[str, Any] = {}
+    now = _now_iso()
+    for t in tools:
+        seg = tool_segment(t.get("name", ""))
+        if not seg:
+            continue
+        servers.setdefault(
+            _norm(seg),
+            {"display": seg, "fingerprint": None, "last_seen": now, "first_seen_project": None},
+        )
+    return {
+        "schema": CACHE_SCHEMA,
+        "tools": tools,
+        "servers": servers,
+        "needs_auth": raw.get("needs_auth", []),
+        "builtin_names": raw.get("builtin_names", []),
+        "builtin_assignment": raw.get("builtin_assignment", {}),
+        "unknown_builtins": raw.get("unknown_builtins", []),
+    }
+
+
+def prune_cache(
+    cache_servers: dict[str, Any],
+    tools: list[dict[str, Any]] | None,
+    prune_days: int,
+    now: float | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+    """Drop cached servers whose last_seen is older than prune_days, plus
+    their tools from the union tool list -- the removal valve for the
+    union-merge design (see docs/adr/0010-union-merge-agent-grants.md), since
+    plain re-enumeration alone would otherwise keep a genuinely-abandoned
+    project-scoped server's grants forever. A server with a missing or
+    unparseable last_seen is NEVER pruned -- fail safe: keep it rather than
+    guess how stale it really is. Returns (kept_servers, kept_tools,
+    sorted_dropped_keys)."""
+    now = time.time() if now is None else now
+    cutoff = now - prune_days * 86400
+    kept_servers: dict[str, Any] = {}
+    dropped: list[str] = []
+    for key, entry in cache_servers.items():
+        ts = _parse_iso(str(entry.get("last_seen", "")))
+        if ts is None or ts >= cutoff:
+            kept_servers[key] = entry
+        else:
+            dropped.append(key)
+    dropped_set = set(dropped)
+    kept_tools = [
+        t for t in (tools or []) if _norm(tool_segment(t.get("name", ""))) not in dropped_set
+    ]
+    return kept_servers, kept_tools, sorted(dropped)
 
 
 def wait_for_settled(
@@ -565,6 +704,7 @@ def enumerate_headless() -> list[dict[str, Any]]:
 
 def enumerate_tools(
     servers: list[dict[str, str]] | None = None,
+    stdio_only_norm: set[str] | None = None,
 ) -> tuple[list[dict[str, Any]] | None, list[str], list[str]]:
     """Hybrid, but with a strict trust order: transcript replay
     (enumerate_transcripts) is the PRIMARY, deterministic source of truth for
@@ -582,6 +722,14 @@ def enumerate_tools(
     and it never contributes a name for a server it can't confirm the
     prefix for.
 
+    stdio_only_norm, if given, restricts the stdio protocol pass (one
+    subprocess launch per configured stdio server) to just these
+    _norm()-ed server names -- callers pass in only the servers whose
+    per-server cache fingerprint is new/changed this run, so a server that
+    hasn't changed doesn't pay for a fresh connection just because some OTHER
+    server in the same session changed. None means "no restriction" (every
+    configured stdio server is launched), matching the original behavior.
+
     enumerate_headless() (one Haiku call, flaky at scale) is used ONLY when
     NO transcript anywhere has ever recorded a deferred_tools_delta. It never
     discovers deferred BUILT-IN tool names (only transcripts record those),
@@ -592,6 +740,8 @@ def enumerate_tools(
     proto: dict[str, dict[str, Any]] = {}  # full_name -> {"name","tier"}, confirmed-prefix
     # stdio tools only
     for name, spec in load_servers().items():
+        if stdio_only_norm is not None and _norm(name) not in stdio_only_norm:
+            continue
         if spec.get("command"):
             for t in list_tools_stdio(spec["command"], spec.get("args", []), spec.get("env")):
                 full = f"mcp__{name}__{t.get('name', '')}"
@@ -860,6 +1010,7 @@ def write_routing(
     needs_auth: list[str] | None = None,
     builtin_assignment: dict[str, list[str]] | None = None,
     unknown_builtins: list[str] | None = None,
+    server_meta: dict[str, Any] | None = None,
 ) -> None:
     """servers: list of {"name","status"} from parse_mcp_servers()/server_hash() --
     EVERY server `claude mcp list` reports, including ones with zero enumerated
@@ -876,7 +1027,14 @@ def write_routing(
     from MCP tools.
     unknown_builtins: sorted names classify_builtins() couldn't match in
     BUILTIN_TIERS and fell to the mechanic-only safe default -- surfaced here
-    so they can be reclassified via tools.json's "builtins" (or "tools") key."""
+    so they can be reclassified via tools.json's "builtins" (or "tools") key.
+    server_meta: the cache's {"servers": {...}} dict (_norm(name) ->
+    {"display","fingerprint","last_seen","first_seen_project"}) -- the UNION
+    of every server ever cached, not just this session's visible `servers`.
+    Rendered as a last-seen table so it's visible which servers' grants are
+    coming from a different project/session (see
+    docs/adr/0010-union-merge-agent-grants.md) and when each was last seen,
+    ahead of an eventual `--prune`."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     by_server: dict[str, dict[str, int]] = {}
     for t in tools:
@@ -889,9 +1047,32 @@ def write_routing(
     lines = [
         "# MCP tool routing (generated by quartermaster — do not edit by hand)\n",
         "read tools -> scout · write tools -> mechanic · orchestrator delegates, holds none.\n",
-        "| Server | read→scout | write→mechanic |",
-        "|---|---|---|",
     ]
+
+    if server_meta:
+        lines.append("## Cached servers (union across projects) — last seen\n")
+        lines.append(
+            "Every server this cache has ever recorded a fingerprint for -- including "
+            "ones NOT configured in this project/session. Grants below are the UNION "
+            "of all of these; a grant for a server not configured here is inert (the "
+            "CLI won't connect it in a project that doesn't configure it), so this "
+            "costs nothing functionally while fixing project-scoped servers' grants "
+            "vanishing whenever a different project's session runs the classifier. "
+            "Run `--prune` (default 30 days, `--prune-days N`) to drop servers not "
+            "seen in a long time.\n"
+        )
+        lines.append("| Server | Last seen | First seen (project) |")
+        lines.append("|---|---|---|")
+        for key in sorted(server_meta, key=lambda k: str(server_meta[k].get("display", k))):
+            entry = server_meta[key]
+            display = entry.get("display", key)
+            last_seen = entry.get("last_seen") or "unknown"
+            project = entry.get("first_seen_project") or "(unknown)"
+            lines.append(f"| {display} | {last_seen} | {project} |")
+        lines.append("")
+
+    lines.append("| Server | read→scout | write→mechanic |")
+    lines.append("|---|---|---|")
     for s in sorted(by_server):
         lines.append(f"| {s} | {by_server[s]['read']} | {by_server[s]['write']} |")
 
@@ -996,63 +1177,117 @@ def write_routing(
 
 def main() -> None:
     policy = load_policy()
-    h, servers = server_hash()
-    cache: dict[str, Any] = {}
+    servers = parse_mcp_servers()  # quick, unsettled snapshot -- cheap per-server fingerprint
+    # comparison against cache, no waiting yet
+    raw_cache: dict[str, Any] = {}
     if CACHE.exists():
-        cache = _read_json(CACHE) or {}
+        raw_cache = _read_json(CACHE) or {}
+    cache = migrate_cache(raw_cache)
+    cache_servers: dict[str, Any] = cache.get("servers", {})
+
+    if "--prune" in sys.argv:
+        try:
+            prune_days = int(arg("--prune-days", str(PRUNE_DAYS_DEFAULT)))
+        except ValueError:
+            prune_days = PRUNE_DAYS_DEFAULT
+        cache_servers, cache["tools"], dropped = prune_cache(
+            cache_servers, cache.get("tools"), prune_days
+        )
+        if dropped:
+            print(
+                f"quartermaster: pruned {len(dropped)} server(s) not seen in "
+                f">={prune_days}d from cache: {', '.join(dropped)}"
+            )
 
     needs_auth: list[str] = cache.get("needs_auth", [])
     builtin_names: list[str] = cache.get("builtin_names", [])  # deferred BUILT-IN tool
     # names (non-mcp__)
-    cached_tools: list[dict[str, Any]] | None = cache.get("tools")
-    # A cache hit (unchanged hash) is only trustworthy if every server CURRENTLY
-    # Connected actually has at least one tool in the cached set. Without this,
-    # a cache poisoned earlier (e.g. a server enumerated as Connected before its
-    # tools finished loading) would match the current hash forever and never
-    # self-heal -- SessionStart would keep reusing a zero-tool grant for a
-    # server that's actually fine. A server that's needs-auth/failed/connecting
-    # with zero cached tools is NOT stale -- that's expected -- so this only
-    # checks servers status_category()=="connected" right now.
-    stale_cache = bool(cached_tools) and bool(incomplete_connected_servers(servers, cached_tools))
-    if "--force" not in sys.argv and cache.get("hash") == h and cached_tools and not stale_cache:
-        tools = cached_tools  # servers unchanged -> reuse (no re-enumeration)
+    cached_tools: list[dict[str, Any]] | None = cache.get("tools") or None
+    # A cache hit for a given server is only trustworthy if that server, when
+    # CURRENTLY Connected, actually has at least one tool in the cached union.
+    # Without this, a cache poisoned earlier (e.g. a server enumerated as
+    # Connected before its tools finished loading) would match its own
+    # fingerprint forever and never self-heal -- SessionStart would keep
+    # reusing a zero-tool grant for a server that's actually fine. A server
+    # that's needs-auth/failed/connecting with zero cached tools is NOT
+    # stale -- that's expected -- so this only checks servers
+    # status_category()=="connected" right now, and only ADDS those servers
+    # to the re-enumeration set rather than forcing a full cache miss.
+    incomplete: set[str] = (
+        {_norm(n) for n in incomplete_connected_servers(servers, cached_tools)}
+        if cached_tools
+        else set()
+    )
+    changed: set[str] = changed_or_new_servers(servers, cache_servers) | incomplete
+
+    if "--force" not in sys.argv and not changed and cached_tools:
+        tools = cached_tools  # every visible server's fingerprint is unchanged, and none of
+        # them are an incomplete-connected self-heal case -> reuse (no re-enumeration)
         # builtin_names above (from cache) is reused too -- it isn't tied to
-        # the MCP server hash, but re-deriving it costs nothing on a cache
+        # any one MCP server, but re-deriving it costs nothing on a cache
         # miss and this branch is specifically the no-re-enumeration path.
     else:
         statuses = wait_for_settled()  # don't enumerate while servers are still connecting
-        h, servers = server_hash(statuses)  # re-key the cache off the SETTLED status, not the
-        # mid-connect snapshot taken before we waited -- so
-        # the next run's hash comparison is apples-to-apples
-        tools, needs_auth, builtin_names = enumerate_tools(servers)
+        servers = statuses  # re-key everything off the SETTLED status, not the mid-connect
+        # snapshot taken before we waited -- so the fingerprint comparison below is
+        # apples-to-apples, same reasoning the old whole-set hash re-key used.
+        incomplete = (
+            {_norm(n) for n in incomplete_connected_servers(statuses, cached_tools)}
+            if cached_tools
+            else set()
+        )
+        changed = changed_or_new_servers(statuses, cache_servers) | incomplete
+        # Only the servers that are actually new/changed/incomplete get a fresh
+        # stdio connection -- an unrelated, unchanged server (e.g. one from a
+        # DIFFERENT project than the one active right now) doesn't pay for
+        # re-enumeration just because something else in this session did.
+        tools, needs_auth, builtin_names = enumerate_tools(statuses, changed or None)
         for _ in range(RETRY_MAX):
             if not incomplete_connected_servers(statuses, tools):
                 break
             time.sleep(RETRY_WAIT)  # a connected server produced 0 tools -> it likely
             statuses = parse_mcp_servers()  # connected late; re-enumerate and merge in what's new
-            retry_tools, retry_needs_auth, retry_builtin_names = enumerate_tools(statuses)
+            retry_tools, retry_needs_auth, retry_builtin_names = enumerate_tools(
+                statuses, changed or None
+            )
             if retry_tools:
                 tools = merge_tool_lists(tools, retry_tools)
             needs_auth = retry_needs_auth or needs_auth
             builtin_names = sorted(set(builtin_names) | set(retry_builtin_names))
-        # Drop cached entries for servers `claude mcp list` no longer reports at
-        # all (genuinely removed configs, e.g. an old transcript-era or headless-
-        # era server) BEFORE handing cache_tools to merge_with_cache -- it can
-        # only tell "connected server returned 0 this run" from "server isn't
-        # configured anymore" if we don't feed it the latter. This is a filter
-        # at the call site; merge_with_cache's own zero-clobber logic is untouched.
-        configured_norm = {_norm(s["name"]) for s in servers}
-        cache_tools = [
-            t
-            for t in cast("list[dict[str, Any]]", cache.get("tools") or [])
-            if _norm(tool_segment(t.get("name", ""))) in configured_norm
-        ]
-        tools = merge_with_cache(tools, cache_tools)  # never clobber good grants with 0
+        # UNION-MERGE (see docs/adr/0010-union-merge-agent-grants.md): hand
+        # merge_with_cache the FULL cached union, never pre-filtered down to
+        # "servers configured in THIS session" -- that pre-filter was the
+        # root cause of project-scoped servers' grants vanishing whenever a
+        # DIFFERENT project's session ran the classifier. merge_with_cache's
+        # own per-segment logic already does the right thing when handed the
+        # full union: a segment this run produced fresh tools for is trusted
+        # (stale cached entries for it dropped); every other segment --
+        # including ones for servers not configured/visible in this session
+        # at all -- is preserved untouched. Removal is now an explicit
+        # `--prune` action (age-based), never an implicit side effect of
+        # which project happened to run the classifier last.
+        tools = merge_with_cache(tools, cached_tools)  # never clobber good grants with 0
         # Built-in tool names, once observed in ANY transcript history, are
         # never tied to a specific MCP server config -- so union in whatever
         # was cached before rather than letting a re-enumeration that missed
         # scanning far enough back clobber a name seen previously.
         builtin_names = sorted(set(builtin_names) | set(cache.get("builtin_names") or []))
+
+    # Refresh per-server fingerprint/last_seen bookkeeping for every server
+    # visible THIS run -- whether or not its tools actually changed. Cached
+    # entries for servers NOT visible this run (a different project's
+    # server) are left completely untouched: they're neither refreshed nor
+    # dropped, only ever removed by an explicit `--prune`.
+    project_hint = current_project_hint()
+    now = _now_iso()
+    for s in servers:
+        key = _norm(s["name"])
+        entry = cache_servers.setdefault(key, {"display": s["name"]})
+        entry["display"] = s["name"]
+        entry["fingerprint"] = server_fingerprint(s)
+        entry["last_seen"] = now
+        if not entry.get("first_seen_project"):
+            entry["first_seen_project"] = project_hint
 
     # NOTE: grants for servers currently needing authentication (or otherwise
     # not reachable) are intentionally NOT stripped here -- if the server was
@@ -1084,18 +1319,29 @@ def main() -> None:
     )
 
     if "--print" in sys.argv:
-        write_routing(tools, assignment, servers, needs_auth, builtin_assignment, unknown_builtins)
+        write_routing(
+            tools,
+            assignment,
+            servers,
+            needs_auth,
+            builtin_assignment,
+            unknown_builtins,
+            cache_servers,
+        )
         print(ROUTING.read_text())
         return
 
     generate_agents(assignment, builtin_assignment)
-    write_routing(tools, assignment, servers, needs_auth, builtin_assignment, unknown_builtins)
+    write_routing(
+        tools, assignment, servers, needs_auth, builtin_assignment, unknown_builtins, cache_servers
+    )
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     with CACHE.open("w") as fh:
         json.dump(
             {
-                "hash": h,
+                "schema": CACHE_SCHEMA,
                 "tools": tools,
+                "servers": cache_servers,
                 "assignment": assignment,
                 "needs_auth": needs_auth,
                 "builtin_names": builtin_names,
@@ -1108,7 +1354,8 @@ def main() -> None:
     n = sum(len(v) for v in assignment.values())
     b = sum(len(v) for v in builtin_assignment.values())
     print(
-        f"quartermaster: {n} MCP tools classified across {len(servers)} servers "
+        f"quartermaster: {n} MCP tools classified across {len(servers)} servers this "
+        f"session ({len(cache_servers)} cached across all projects) "
         f"(scout {len(assignment.get('scout', []))}, "
         f"mechanic {len(assignment.get('mechanic', []))}); "
         f"{b} built-in tool grants across orchestrator/scout/mechanic/builder "
