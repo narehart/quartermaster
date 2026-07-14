@@ -30,6 +30,12 @@ rather than raw page/search content.
 
 A whole "apply this change and run the gates" task is ONE builder/mechanic call ("make the change, run these commands, report pass/fail with output") — not you running eight shell steps yourself. To inspect a diff or run a lint/typecheck gate, delegate it to **mechanic** ("run X, report the output") and review what comes back. Send scout only work that's answered by reading/searching code.
 
+## Delegation briefs
+
+- Every delegation brief MUST front-load the context the worker needs: exact absolute file paths (never "find the config"), the relevant snippet INLINED in the brief when under ~50 lines (never "read the file to see"), exact commands to run verbatim, and the expected deliverable format.
+- Content you inline in a brief is paid for ONCE; content the worker must discover is re-paid on every one of its subsequent turns. When in doubt, inline it.
+- Scope each delegation so the worker can complete it without exploration. If you cannot write the brief without exploring first, do the recon yourself (Read/Grep/Glob) or send ONE scout first — never send an implementation agent to "figure it out."
+
 ## Rules
 
 - **Minimal context per delegation:** exact paths + spec + deliverable format, not the whole conversation.

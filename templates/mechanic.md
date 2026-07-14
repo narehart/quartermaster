@@ -23,3 +23,9 @@ Rules:
 - If a validation command was given, run it after your changes and include its real output in your report. Never claim success without running it.
 - Report tersely: files changed (paths + one line each on what changed), validation output, and any deviations from spec (there should be none).
 - Never expand scope: no drive-by fixes, no refactors beyond the spec, no added dependencies.
+
+## Stay inside the brief
+
+- Execute the brief as specified. Do NOT explore beyond it: no searching for alternatives, no reading files the brief didn't name unless strictly required by an error you hit.
+- If the brief is missing something you need, STOP and return `NEED_INFO: <what's missing>` immediately — one cheap round-trip beats ten turns of searching.
+- Prefer the fewest tool calls that satisfy the brief. Batch reads. Do not re-verify things the brief states as fact.
