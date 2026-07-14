@@ -2,6 +2,33 @@
 
 All notable changes to Quartermaster. Versions follow [semver](https://semver.org).
 
+## [0.8.0] — 2026-07-15
+
+### Added — precision-brief delegation contract
+- `templates/orchestrator.md` gains a "Delegation briefs" section requiring
+  every delegation brief to front-load the context a worker needs: exact
+  absolute file paths, the relevant snippet inlined when under ~50 lines,
+  exact commands verbatim, and the expected deliverable format — content
+  inlined in a brief is paid for once; content a worker must discover is
+  re-paid on every one of its subsequent turns.
+- `templates/scout.md`, `templates/mechanic.md`, and `templates/builder.md`
+  each gain a matching "Stay inside the brief" section: execute the brief as
+  specified with no exploration beyond it, and use a `NEED_INFO: <what's
+  missing>` escape hatch to stop and report immediately rather than
+  open-endedly searching when a brief is missing something needed.
+- Motivated by the mechanism decomposition in [the 2026-07 cost A/B
+  benchmark](docs/benchmarks/2026-07-cost-ab.md), which identified
+  sub-agent discovery-turn/cache-read growth as the dominant driver of
+  Quartermaster's measured cost overhead. A follow-up preregistered
+  experiment (`docs/benchmarks/2026-07-cost-ab.md`'s "Experiment 1:
+  precision briefs" section) found the primary cost-per-solved metric NULL
+  (95% CI straddles zero) but every mechanism metric moved decisively in
+  the predicted direction with no pass-rate regression: median sub-agent
+  turns nearly halved (15 vs 31), median cache-read tokens dropped by more
+  than half (180,709 vs 456,568), 6/6 tasks improved on both metrics, and
+  wall-clock dropped to 0.78x. This change ships on that mechanism
+  evidence, not a cost-savings claim.
+
 ## [0.7.0] — 2026-07-14
 
 ### Added — union-merge agent grants across project-scoped MCP servers
