@@ -6,18 +6,21 @@ A tool-restricted orchestrator runs your main session: it reads and searches
 the codebase to plan and review, invokes skills, and tracks tasks — but it
 can't edit files, run shell, call MCP tools, or fetch/search the web. Research,
 like all other I/O, is delegated: web lookups go to `scout`, which returns a
-summary instead of raw page content. It also gains, once tiered, built-in
-orchestration tools (`Monitor`, `SendMessage`, `Task*`, `Cron*`, plan-mode,
-MCP-resource reads). It delegates every bit of execution to cheap tiered
-sub-agents. MCP tools are tiered the same way: reads to a cheap recon agent,
-writes to the execution agent — because an MCP call is I/O, which the
-expensive orchestrator shouldn't be doing either.
+summary instead of raw page content. It also gains built-in orchestration
+tools (`Monitor`, `SendMessage`, `Task*`, `Cron*`, plan-mode, MCP-resource
+reads) — note these are currently granted only after their names have been
+observed in prior session history, so a fresh install's orchestrator starts
+without them ([#12](https://github.com/narehart/quartermaster/issues/12)). It
+delegates every bit of execution to cheap tiered sub-agents. MCP tools are
+tiered the same way: reads to a cheap recon agent, writes to the execution
+agent — because an MCP call is I/O, which the expensive orchestrator
+shouldn't be doing either.
 
 ## Tiers
 
 | Agent | Model | Holds |
 |---|---|---|
-| **orchestrator** (main thread) | inherit (your session model) | Read/Grep/Glob/Agent/Skill/TodoWrite, plus tiered built-in orchestration tools (Monitor, SendMessage, Task\*/Cron\*, plan-mode, MCP-resource reads). **No** Edit/Write/MultiEdit/NotebookEdit/Bash, **no** MCP server tools, **no** WebFetch/WebSearch — web research is delegated to scout. Delegates everything. |
+| **orchestrator** (main thread) | inherit (your session model) | Read/Grep/Glob/Agent/Skill/TodoWrite, plus built-in orchestration tools (Monitor, SendMessage, Task\*/Cron\*, plan-mode, MCP-resource reads) once observed in prior session history — a fresh install starts without them ([#12](https://github.com/narehart/quartermaster/issues/12)). **No** Edit/Write/MultiEdit/NotebookEdit/Bash, **no** MCP server tools, **no** WebFetch/WebSearch — web research is delegated to scout. Delegates everything. |
 | **scout** | Haiku | read-only file/code recon + **read-only MCP tools** (list/search/get) |
 | **mechanic** | Haiku | shell + mechanical edits + **write MCP tools** (create/update/send/delete) |
 | **builder** | Sonnet | well-specified implementation, tests, diagnosed fixes |
@@ -52,7 +55,10 @@ classified and tiered across the agents too, not just MCP tools.
 
 It re-runs at **SessionStart**, but only does the (Haiku) enumeration call when
 your set of MCP servers actually changed — otherwise it regenerates agents from
-cache. Add or remove an MCP server and the tiering updates itself.
+cache. Add an MCP server and the tiering updates itself. Removed servers'
+grants persist by design (they're inert without the server — see
+[ADR 0010](docs/adr/0010-union-merge-agent-grants.md)) until you prune them:
+`classify-mcp.py --prune` (default 30-day staleness, `--prune-days N`).
 
 Optional `~/.claude/quartermaster/tools.json` (see `tools.example.json`)
 overrides any classification — split a server, move it, or skip it. Not required.
@@ -97,8 +103,18 @@ bash uninstall.sh                                                # reverts setti
   statistically null at a sonnet main thread and **1.39x higher** (a
   reversal of the hypothesis) at an opus main thread, because delegation
   overhead roughly doubles total token volume under one-shot, cold-start
-  conditions. Long interactive-session economics (cross-turn caching) are
-  untested. See [docs/benchmarks/2026-07-cost-ab.md](docs/benchmarks/2026-07-cost-ab.md)
+  conditions. That 1.39x figure was measured on the pre-contract plugin,
+  before the v0.8.0 precision-brief delegation contract (front-loaded,
+  exact-path briefs; see `templates/orchestrator.md`). A follow-up
+  experiment on the v0.8.0 contract puts cost-per-solved at a **1.13x**
+  point estimate vs stock (down from 1.39x) — but the experiment's own
+  primary comparison (briefs vs its own Arm B baseline) has a bootstrap CI
+  that straddles zero, so per the same prereg decision rule this is a
+  **null result, not a confirmed cost improvement**. What *is* confirmed on
+  6/6 tasks: sub-agent turns -52%, sub-agent cache-read tokens -60%,
+  wall-clock 0.78x, pass rate unchanged. Long interactive-session economics
+  (cross-turn caching) remain untested either way. See
+  [docs/benchmarks/2026-07-cost-ab.md](docs/benchmarks/2026-07-cost-ab.md)
   for the full result, including where Quartermaster measured cheaper (3 of
   6 opus-experiment tasks) and where it didn't.
 
