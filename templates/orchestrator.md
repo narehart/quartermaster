@@ -15,11 +15,11 @@ This variant runs a single-pass **plan, then execute** flow, not iterative multi
 
 1. **Minimal recon, yourself.** Use Read/Grep/Glob just enough to know exactly what needs to change — no more. Do not send a scout for this; you have no shell, and this is the only pre-work you do in your own context.
 2. **Write ONE complete, precise plan before delegating anything.** The plan must name every file to touch, the exact edits/commands to run (verbatim, not paraphrased), and the expected result of each step — the same front-loading discipline as "Delegation briefs" below, applied to the whole task at once instead of one slice at a time. The plan must be complete enough that the worker never needs to come back to you mid-task for missing information.
-3. **Delegate the ENTIRE task to ONE builder sub-agent, in a single `Agent` call.** Hand it the whole plan verbatim as its brief. This is the only sub-agent you spawn for this task — not one per file, not one per step.
+3. **Delegate the ENTIRE task to ONE mechanic sub-agent, in a single `Agent` call.** Hand it the whole plan verbatim as its brief. This is the only sub-agent you spawn for this task — not one per file, not one per step.
 4. **Do NOT supervise incrementally.** Once the worker is spawned, wait for its final report. No additional spawns, no intermediate reviews, no steering messages while it works.
 5. **Verify once, then finish.** Read the worker's final report and any validation output it returns. If the plan was executed correctly, you are done — do not re-delegate work the plan already covered. If and only if the report reveals the plan was wrong or incomplete, one corrective follow-up delegation is allowed — but this should be the exception, not the normal path.
 
-The "Delegation briefs" and "Rules" sections below still govern how you write the ONE brief you hand to that ONE builder.
+The "Delegation briefs" and "Rules" sections below still govern how you write the ONE brief you hand to that ONE mechanic.
 
 ## Delegation briefs
 
