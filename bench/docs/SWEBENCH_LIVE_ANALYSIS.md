@@ -1,0 +1,185 @@
+# SWE-bench Live baseline — running analysis log
+
+Preregistration: `PREREG_SWEBENCH_LIVE.md` (locked at commit 27b619c, before
+data). This log records results and every anomaly + its resolution, per the
+"treat each suspicious result as a bug until proven" discipline.
+
+## Status
+
+- **opus-solo arm: COMPLETE.** 25/25 runs healthy (swap not applicable; model
+  pins clean). **8/25 resolved = 32% pass rate.** cost_per_solved $2.35.
+- **prewalk-sonnet arm: COMPLETE.** 25/25 healthy, 25/25 swaps fired, 0 real
+  drift. **7/25 resolved = 28%.** cost_per_solved $3.25.
+  - Paired vs opus-solo (n=25, bootstrap): pass-rate diff −4% CI [−12%, 0%]
+    → **quality bar PASS** (not statistically below). cost_per_solved ratio
+    median **1.35×** CI **[0.97, 2.42]** → **NOT cheaper; trends ~35% more
+    expensive per solve.** Verdict: preserves quality, fails the cost
+    criterion on this distribution. Driver = executor turn-inflation (F1).
+- **prewalk-haiku arm: COMPLETE.** 25/25 healthy, 25/25 swaps fired, 0 real
+  drift. **6/25 resolved = 24%.** cost_per_solved $2.04; total $12.22.
+  - Paired vs opus-solo (n=25): pass-rate diff −8% CI [−20%, 0%] → quality
+    bar PASS (but CI upper touches 0; lost 2 of opus's 8 solves, gained 0).
+    cost_per_solved ratio median **0.86×** CI **[0.60, 1.62]** (includes 1);
+    total-cost ratio **0.65×**, cheaper on 17/25. **Directionally cheaper,
+    but at a real quality cost, and neither CI is conclusive at n=25.**
+  - Median turns opus 18 / haiku **19** — haiku did NOT turn-inflate (unlike
+    sonnet's 25). Prediction "haiku ≥ sonnet cost" was WRONG.
+
+### Verdict on prewalk for real-repo SWE (directional, underpowered)
+
+The driver is **per-token discount ÷ turn-inflation**:
+- **prewalk-sonnet** — only ~3–5× per-token discount; turn-inflation
+  (25 vs 19) overcomes it → **1.35× MORE expensive**, quality ~flat.
+  Worst of both. Fails the pivot's cost bar outright.
+- **prewalk-haiku** — ~10–15× per-token discount, no turn-inflation → real
+  **35% total cost cut**, but capability drop costs 2 solves (32%→24%). A
+  genuine cost↔quality TRADE, not a free lunch; quality bar passes only
+  marginally.
+
+**Neither variant clears "cheaper WITHOUT compromising quality" on this
+distribution.** Terminal-Bench's clean 40.9% prewalk saving does NOT
+generalize to real-repo dev work. This is a decisive-direction (but n=25
+underpowered) negative for prewalk under the pivot rule, and motivates
+pursuing context-reduction techniques (see TOKEN_REDUCTION_CANDIDATES.md)
+instead, which the literature reports as quality-NEUTRAL cost wins.
+
+Caveat: cost-per-solved denominators are tiny (8/7/6 solves), all CIs wide.
+DIRECTIONAL, not certifying. A powered run (larger n or healthier-resolve
+subset) is required before any published claim.
+
+### (superseded) earlier in-progress note
+
+### Underpowered — directional read only
+
+opus-solo's 32% pass trips preregistered kill-flag (c) (baseline pass rate
+< ~40%). This subset (25 fresh Sep–Aug 2025 SWE-bench Live instances) is
+hard; ~32% one-shot opus is itself evidence of contamination-resistance
+(vs ~70% on the memorized/deprecated Verified split). But it makes the
+cost-per-solved denominators small (~8 solved for opus-solo), so the
+bootstrap quality-bar test on n=25×1 is **underpowered**. This run is a
+DIRECTIONAL read; a powered confirmation (larger n or a healthier-resolve
+subset) is required before any certifying claim.
+
+## Anomaly log
+
+### A1 — Background Haiku in "opus-solo" runs (RESOLVED: not a bug)
+
+**Observation.** Every opus-solo run shows some `claude-haiku-4-5-20251001`
+tokens despite opus-solo launching `claude -p --model claude-opus-4-8` with
+no swap. One run, `sissbruecker__linkding-1175`, is a wild outlier: **51.4%**
+of its token volume is Haiku (Haiku 2.29M tok vs opus 2.16M; Haiku
+$0.41 of $2.32 total). The other 24 runs: 0.1–3.1% Haiku share.
+
+**Diagnosis.** The Haiku usage is Claude Code's own automatic background
+work (context compaction / summarization), NOT tool execution:
+- linkding-1175 Haiku did **15.7K output** tokens against **2.18M
+  cache_read** — the signature of repeatedly re-reading a large cached
+  context to emit tiny summaries, not producing edits/tool calls.
+- It was the **longest trajectory (111 turns)**; background-Haiku volume
+  scales with trajectory length and context size, which is why one very
+  long run ballooned to 51% while typical runs sit under 3%.
+
+**Why it's not a harness bug and doesn't invalidate the baseline.**
+- `true_cost_usd` sums actual per-model spend, so this Haiku is counted as
+  the real cost it was. Cost-per-solved uses actual spend — honest.
+- If anything it biases **conservatively** for the prewalk hypothesis: the
+  opus-solo baseline is slightly *cheaper* than a hypothetical
+  no-background-Haiku opus would be, shrinking (not inflating) any measured
+  prewalk saving.
+
+**Consequences carried into the analysis.**
+1. The same background-Haiku mechanism runs in ALL arms, so prewalk's
+   marginal opus→sonnet benefit on long runs is partly pre-empted (a chunk
+   of long-run cost is already cheap Haiku). Interpretation caveat.
+2. **Must report per-arm background-Haiku share** to rule out a systematic
+   trajectory-length confound between arms (e.g. if opus-solo triggers more
+   compaction than prewalk, it gets more "discount," biasing the comparison).
+3. The model-pin `drift` flag fires on this background Haiku for
+   prewalk-sonnet (expected=[opus, sonnet]). Handled: `validate_arm.py`
+   classifies drift as benign iff every drift entry is the known
+   `claude-haiku-4-5*` housekeeping model and `all_expected_matched` is
+   True (both work-loop pins present), verified against `model_sequence`.
+
+### F1 — INTERIM (n=10): prewalk-sonnet not showing savings, trending costlier
+
+**Not a conclusion — wildly underpowered, recorded for the full-run read.**
+
+At 10/25 prewalk-sonnet runs (all healthy, 10/10 swap fired, 0 real drift):
+
+| arm | $/run | cost_per_solved | pass_rate |
+|---|---|---|---|
+| opus-solo (n=25) | $0.75 | $2.35 | 32% (8/25) |
+| prewalk-sonnet (n=10) | $1.17 | $3.89 | 30% (3/10) |
+
+Paired (n=10) cost_per_solved ratio arm/baseline: median **1.74×**, 95%CI
+**[0.93, 5.08]** — spans "slightly cheaper" to "5× worse". Pass-rate diff
+CI [-30%, 0%] → quality bar PASS.
+
+**Mechanism — RESOLVED by paired same-instance data (n=17):** the driver is
+**executor turn-inflation**, NOT caching.
+
+- **Cold-cache hypothesis REFUTED.** For every prewalk-sonnet run the
+  executor's `cache_creation / cache_read` ratio is **0.01–0.12** — the
+  swap's one cold write is 1–12% of what sonnet then reads warm. Prewalk
+  *does* avoid the cache hit, as designed. My earlier "cold-cache penalty
+  is primary" call was wrong.
+- **Real driver: the cheaper executor takes MORE turns**, and each extra
+  turn re-reads the whole accumulated context as `cache_read`, so token
+  volume (hence cost) scales with turn count. Median turns opus **19** →
+  prewalk **25**. Per-instance the correlation is tight and monotone:
+  where sonnet's turn count ≈ opus's, prewalk is cheaper (0.55–0.73×);
+  where sonnet flails to 2–7× the turns, prewalk is 1.7–2.9× costlier
+  (pex-2888 6→43T=2.92×, openai-1601 48→112T=2.02×, dspy-8718 3→11T=1.95×).
+  The lower per-token rate is overwhelmed by higher token volume.
+- **Paired totals (n=17):** prewalk **1.21×** opus cost, cheaper on only
+  **6/17** instances. Quality roughly held: opus 6/17 resolved, prewalk
+  5/17 (lost openai-1601 — sonnet burned 112 turns and still failed what
+  opus solved in 48).
+- **Background-Haiku confound (A1)** is a secondary flatterer of the
+  baseline (prewalk 0% vs opus-solo mean 2.7%), but small next to the
+  turn-inflation effect.
+
+**Implication for the pivot.** Terminal-Bench (small contexts, executor
+finishes in few turns) showed 40.9% savings *because* the executor was
+turn-efficient there. On real-repo SWE work the executor is less
+turn-efficient, and turn-inflation erases the per-token discount. Under the
+pivoted "only ship what reduces token cost without hurting quality" rule,
+prewalk-sonnet is **not** currently earning its place on this distribution.
+prewalk-haiku (even cheaper executor, but likely even less turn-efficient)
+is the next test — cheaper per token but probably more turns still.
+
+### A3 — prewalk-haiku executor pin: alias vs dated snapshot (RESOLVED: benign)
+
+**Observation.** prewalk-haiku runs tripped the validator's
+`WORKLOOP_PIN_MISSING` check: expected executor `claude-haiku-4-5` (the
+undated alias in `metrics.EXECUTOR_MODEL_HAIKU`) vs observed
+`claude-haiku-4-5-20251001` (the dated snapshot the alias resolves to).
+`verify_model_pins` uses exact-string equality, so they didn't match —
+unlike the planner (`claude-opus-4-8`) and sonnet executor
+(`claude-sonnet-5`), whose observed ids carry no date suffix.
+
+**Diagnosis: substantively fine.** swap_fired=True, model_sequence shows the
+clean prewalk pattern (contiguous opus block → haiku block, not interspersed
+background housekeeping), and metrics priced the *observed dated* model. The
+exact cheap snapshot did the work; only the EXPECTED constant string was the
+undated alias. `analyze_baseline.py`'s real-drift check already prefix-matches
+`claude-haiku-4-5*` as benign, so the final numbers were never affected —
+only the interim health-checker mis-flagged it.
+
+**Fix applied.** `validate_arm.py` now matches date-tolerantly: observed `o`
+satisfies expected `e` iff `o == e` or `o.startswith(e + "-")` (a dated
+snapshot of the expected family), while still flagging genuinely different
+models as real drift. All 3 arms read healthy after the fix.
+
+**For a certifying run:** set `EXECUTOR_MODEL_HAIKU` to the exact dated id
+`claude-haiku-4-5-20251001` so the launch flag and the pin expectation are
+both the exact snapshot (honoring the "exact IDs, no floating aliases" rule
+literally). NOT changed mid-arm here — the alias resolved to the same dated
+model across all runs, so the data is consistent; editing the running
+runner's source would risk the in-flight arm.
+
+### A2 — validator `resolved` field (RESOLVED: fixed)
+
+`validate_arm.py` initially read `eval.resolved`; the SWE-bench verdict
+actually nests at `eval.report.resolved` (or `eval.report.<iid>.resolved`).
+Fixed; opus-solo now reads 8 resolved / 17 not = 32%.

@@ -1,0 +1,213 @@
+{
+  "dataset": "SWE-bench-Live/SWE-bench-Live",
+  "split": "full",
+  "platform": "linux",
+  "generated_at": "2026-07-18T07:01:17Z",
+  "n_requested": 25,
+  "max_test_count": 2000,
+  "n_candidates_scanned": 43,
+  "n_skipped_no_image": 0,
+  "n_skipped_heavy": 18,
+  "instances": [
+    {
+      "instance_id": "openai__openai-agents-python-1636",
+      "repo": "openai/openai-agents-python",
+      "created_at": "2025-09-02 09:55:04",
+      "n_tests": 576,
+      "image": "starryzhang/sweb.eval.x86_64.openai_1776_openai-agents-python-1636",
+      "difficulty": "{'files': 1, 'hunks': 2, 'lines': 4}"
+    },
+    {
+      "instance_id": "openai__openai-agents-python-1633",
+      "repo": "openai/openai-agents-python",
+      "created_at": "2025-09-02 01:10:29",
+      "n_tests": 567,
+      "image": "starryzhang/sweb.eval.x86_64.openai_1776_openai-agents-python-1633",
+      "difficulty": "{'files': 2, 'hunks': 4, 'lines': 44}"
+    },
+    {
+      "instance_id": "stanfordnlp__dspy-8739",
+      "repo": "stanfordnlp/dspy",
+      "created_at": "2025-08-30 07:39:31",
+      "n_tests": 441,
+      "image": "starryzhang/sweb.eval.x86_64.stanfordnlp_1776_dspy-8739",
+      "difficulty": "{'files': 1, 'hunks': 1, 'lines': 16}"
+    },
+    {
+      "instance_id": "openai__openai-agents-python-1619",
+      "repo": "openai/openai-agents-python",
+      "created_at": "2025-08-29 21:02:29",
+      "n_tests": 685,
+      "image": "starryzhang/sweb.eval.x86_64.openai_1776_openai-agents-python-1619",
+      "difficulty": "{'files': 2, 'hunks': 9, 'lines': 104}"
+    },
+    {
+      "instance_id": "django-guardian__django-guardian-899",
+      "repo": "django-guardian/django-guardian",
+      "created_at": "2025-08-29 08:55:48",
+      "n_tests": 294,
+      "image": "starryzhang/sweb.eval.x86_64.django-guardian_1776_django-guardian-899",
+      "difficulty": "{'files': 2, 'hunks': 3, 'lines': 12}"
+    },
+    {
+      "instance_id": "django-guardian__django-guardian-896",
+      "repo": "django-guardian/django-guardian",
+      "created_at": "2025-08-28 23:07:44",
+      "n_tests": 310,
+      "image": "starryzhang/sweb.eval.x86_64.django-guardian_1776_django-guardian-896",
+      "difficulty": "{'files': 5, 'hunks': 7, 'lines': 57}"
+    },
+    {
+      "instance_id": "a2aproject__a2a-python-443",
+      "repo": "a2aproject/a2a-python",
+      "created_at": "2025-08-28 21:39:11",
+      "n_tests": 666,
+      "image": "starryzhang/sweb.eval.x86_64.a2aproject_1776_a2a-python-443",
+      "difficulty": "{'files': 5, 'hunks': 26, 'lines': 68}"
+    },
+    {
+      "instance_id": "openai__openai-agents-python-1601",
+      "repo": "openai/openai-agents-python",
+      "created_at": "2025-08-28 05:18:26",
+      "n_tests": 665,
+      "image": "starryzhang/sweb.eval.x86_64.openai_1776_openai-agents-python-1601",
+      "difficulty": "{'files': 4, 'hunks': 7, 'lines': 84}"
+    },
+    {
+      "instance_id": "QuantEcon__QuantEcon.py-797",
+      "repo": "QuantEcon/QuantEcon.py",
+      "created_at": "2025-08-27 23:56:06",
+      "n_tests": 553,
+      "image": "starryzhang/sweb.eval.x86_64.quantecon_1776_quantecon.py-797",
+      "difficulty": "{'files': 2, 'hunks': 11, 'lines': 81}"
+    },
+    {
+      "instance_id": "pex-tool__pex-2888",
+      "repo": "pex-tool/pex",
+      "created_at": "2025-08-27 19:57:49",
+      "n_tests": 924,
+      "image": "starryzhang/sweb.eval.x86_64.pex-tool_1776_pex-2888",
+      "difficulty": "{'files': 3, 'hunks': 6, 'lines': 22}"
+    },
+    {
+      "instance_id": "sdv-dev__SDV-2658",
+      "repo": "sdv-dev/SDV",
+      "created_at": "2025-08-27 19:48:19",
+      "n_tests": 1566,
+      "image": "starryzhang/sweb.eval.x86_64.sdv-dev_1776_sdv-2658",
+      "difficulty": "{'files': 1, 'hunks': 5, 'lines': 82}"
+    },
+    {
+      "instance_id": "stanfordnlp__dspy-8718",
+      "repo": "stanfordnlp/dspy",
+      "created_at": "2025-08-27 06:46:30",
+      "n_tests": 441,
+      "image": "starryzhang/sweb.eval.x86_64.stanfordnlp_1776_dspy-8718",
+      "difficulty": "{'files': 1, 'hunks': 2, 'lines': 40}"
+    },
+    {
+      "instance_id": "sdv-dev__SDV-2656",
+      "repo": "sdv-dev/SDV",
+      "created_at": "2025-08-26 21:22:01",
+      "n_tests": 1567,
+      "image": "starryzhang/sweb.eval.x86_64.sdv-dev_1776_sdv-2656",
+      "difficulty": "{'files': 1, 'hunks': 2, 'lines': 15}"
+    },
+    {
+      "instance_id": "aws-cloudformation__cfn-lint-4236",
+      "repo": "aws-cloudformation/cfn-lint",
+      "created_at": "2025-08-26 18:22:09",
+      "n_tests": 1607,
+      "image": "starryzhang/sweb.eval.x86_64.aws-cloudformation_1776_cfn-lint-4236",
+      "difficulty": "{'files': 1, 'hunks': 2, 'lines': 9}"
+    },
+    {
+      "instance_id": "ipython__ipython-14970",
+      "repo": "ipython/ipython",
+      "created_at": "2025-08-26 17:28:34",
+      "n_tests": 1284,
+      "image": "starryzhang/sweb.eval.x86_64.ipython_1776_ipython-14970",
+      "difficulty": "{'files': 1, 'hunks': 3, 'lines': 14}"
+    },
+    {
+      "instance_id": "sissbruecker__linkding-1175",
+      "repo": "sissbruecker/linkding",
+      "created_at": "2025-08-26 09:53:54",
+      "n_tests": 967,
+      "image": "starryzhang/sweb.eval.x86_64.sissbruecker_1776_linkding-1175",
+      "difficulty": "{'files': 27, 'hunks': 35, 'lines': 853}"
+    },
+    {
+      "instance_id": "octodns__octodns-1298",
+      "repo": "octodns/octodns",
+      "created_at": "2025-08-25 21:11:54",
+      "n_tests": 362,
+      "image": "starryzhang/sweb.eval.x86_64.octodns_1776_octodns-1298",
+      "difficulty": "{'files': 2, 'hunks': 3, 'lines': 19}"
+    },
+    {
+      "instance_id": "authlib__authlib-802",
+      "repo": "authlib/authlib",
+      "created_at": "2025-08-25 14:49:37",
+      "n_tests": 746,
+      "image": "starryzhang/sweb.eval.x86_64.authlib_1776_authlib-802",
+      "difficulty": "{'files': 4, 'hunks': 6, 'lines': 48}"
+    },
+    {
+      "instance_id": "ipython__ipython-14969",
+      "repo": "ipython/ipython",
+      "created_at": "2025-08-24 16:24:52",
+      "n_tests": 1282,
+      "image": "starryzhang/sweb.eval.x86_64.ipython_1776_ipython-14969",
+      "difficulty": "{'files': 1, 'hunks': 2, 'lines': 7}"
+    },
+    {
+      "instance_id": "spesmilo__electrum-10172",
+      "repo": "spesmilo/electrum",
+      "created_at": "2025-08-23 16:56:08",
+      "n_tests": 857,
+      "image": "starryzhang/sweb.eval.x86_64.spesmilo_1776_electrum-10172",
+      "difficulty": "{'files': 2, 'hunks': 7, 'lines': 40}"
+    },
+    {
+      "instance_id": "Archmonger__django-dbbackup-631",
+      "repo": "Archmonger/django-dbbackup",
+      "created_at": "2025-08-23 08:37:51",
+      "n_tests": 266,
+      "image": "starryzhang/sweb.eval.x86_64.archmonger_1776_django-dbbackup-631",
+      "difficulty": "{'files': 3, 'hunks': 5, 'lines': 9}"
+    },
+    {
+      "instance_id": "pgmpy__pgmpy-2314",
+      "repo": "pgmpy/pgmpy",
+      "created_at": "2025-08-22 21:00:01",
+      "n_tests": 1253,
+      "image": "starryzhang/sweb.eval.x86_64.pgmpy_1776_pgmpy-2314",
+      "difficulty": "{'files': 1, 'hunks': 1, 'lines': 6}"
+    },
+    {
+      "instance_id": "authlib__authlib-800",
+      "repo": "authlib/authlib",
+      "created_at": "2025-08-22 11:09:35",
+      "n_tests": 739,
+      "image": "starryzhang/sweb.eval.x86_64.authlib_1776_authlib-800",
+      "difficulty": "{'files': 3, 'hunks': 3, 'lines': 27}"
+    },
+    {
+      "instance_id": "Archmonger__django-dbbackup-626",
+      "repo": "Archmonger/django-dbbackup",
+      "created_at": "2025-08-22 08:56:35",
+      "n_tests": 268,
+      "image": "starryzhang/sweb.eval.x86_64.archmonger_1776_django-dbbackup-626",
+      "difficulty": "{'files': 3, 'hunks': 5, 'lines': 26}"
+    },
+    {
+      "instance_id": "llamastack__llama-stack-3224",
+      "repo": "llamastack/llama-stack",
+      "created_at": "2025-08-21 15:52:00",
+      "n_tests": 588,
+      "image": "starryzhang/sweb.eval.x86_64.llamastack_1776_llama-stack-3224",
+      "difficulty": "{'files': 1, 'hunks': 3, 'lines': 25}"
+    }
+  ]
+}

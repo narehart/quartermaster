@@ -1,6 +1,13 @@
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+# `bench/` is the research benchmark harness (SWE-bench Live token-cost rig),
+# not shipped plugin runtime. Like pyright (`include = ["scripts", "tests"]`)
+# and pytest coverage (`--cov=scripts`), the plugin's strict lint gate is
+# scoped to runtime code; bench tooling is excluded so `make verify` stays
+# green and fast. bench still gets the no-inline-suppressions gate (it scans
+# every tracked *.py/*.sh) and gitleaks.
+extend-exclude = ["bench"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PTH", "RUF", "S", "TID", "PIE", "RET"]
