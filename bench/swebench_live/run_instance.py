@@ -68,6 +68,8 @@ PREWALK_ARMS = {
 # Value = (mode, mask_enabled).
 MASKED_ARMS = {
     "opus-capped": ("cap", True),
+    "opus-cap4k": ("cap", True),  # driver passes --cap-chars 4000 (dose-response arm)
+    "opus-epoch": ("epoch", True),  # tail-targeted fire-once clearing (ORIGINAL_IDEAS idea 2)
     "opus-masked": ("window", True),
     "opus-passthru": ("cap", False),
 }
@@ -139,6 +141,8 @@ def main() -> None:
             "prewalk-sonnet",
             "prewalk-haiku",
             "opus-capped",
+            "opus-cap4k",
+            "opus-epoch",
             "opus-masked",
             "opus-passthru",
             "gold",

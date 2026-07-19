@@ -70,7 +70,88 @@ UPSTREAM = os.environ.get("ANTHROPIC_UPSTREAM", "api.anthropic.com")
 
 PLACEHOLDER = "[observation masked to save context; re-run the tool if you need this output again]"
 CAP_MARKER = "[[QM-CAPPED "  # idempotency sentinel: never re-cap our own output
+EPOCH_TRIGGER_TOKENS = int(os.environ.get("MASK_EPOCH_TRIGGER_TOKENS", "50000"))
+EPOCH_KEEP_RECENT = int(os.environ.get("MASK_EPOCH_KEEP_RECENT", "5"))
+EPOCH_CLEAR_AT_LEAST = int(os.environ.get("MASK_EPOCH_CLEAR_AT_LEAST_CHARS", "60000"))
 _req_counter = 0
+
+# Epoch-clearing state (one proxy process serves one agent run; requests are
+# sequential). Once a tool_use_id enters _cleared_ids its tool_result renders
+# as the SAME placeholder in every subsequent request -- byte-stable between
+# epochs. New ids are added ONLY at threshold firings (batched, per the
+# break-even rule in bench/docs/ORIGINAL_IDEAS.md), so the cached prefix is
+# invalidated once per epoch, not per turn (the F2 fix, applied to clearing).
+_cleared_ids: set[str] = set()
+_epochs_fired = 0
+
+
+def _content_text_and_hash(content: object) -> tuple[str, str]:
+    text = content if isinstance(content, str) else json.dumps(content)
+    return text, hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def epoch_placeholder(content: object) -> str:
+    """Deterministic replacement for a cleared tool_result: pure function of
+    the ORIGINAL content (which the client resends in full every request), so
+    a cleared block serializes identically in every later request."""
+    text, digest = _content_text_and_hash(content)
+    if OVERFLOW_DIR:
+        p = Path(OVERFLOW_DIR)
+        p.mkdir(parents=True, exist_ok=True)
+        f = p / f"{digest}.txt"
+        if not f.exists():
+            f.write_text(text, errors="replace")
+    return (
+        f"[[QM-CLEARED {digest}]] old observation cleared at a context checkpoint "
+        f"({len(text)} chars). Full output saved at {OVERFLOW_MOUNT}/{digest}.txt — "
+        f"Read it with offset/limit if needed."
+    )
+
+
+def epoch_transform(obj: dict, positions: list, stats: dict) -> bool:
+    """Apply epoch clearing to a parsed request. Returns True if modified.
+    Positions: [(mi, bi)] of tool_result blocks in conversation order."""
+    global _epochs_fired
+    messages = obj["messages"]
+    changed = False
+    # 1. Re-apply existing clears (byte-stable between epochs).
+    for mi, bi in positions:
+        block = messages[mi]["content"][bi]
+        tid = block.get("tool_use_id")
+        if tid in _cleared_ids:
+            ph = epoch_placeholder(block.get("content"))
+            if block.get("content") != ph:
+                block["content"] = ph
+                block.pop("is_error", None)
+                changed = True
+    # 2. Fire a new epoch if the (post-clear) request is over the trigger.
+    est_tokens = len(json.dumps(obj)) // 4
+    stats["est_tokens"] = est_tokens
+    if est_tokens > EPOCH_TRIGGER_TOKENS:
+        candidates = [
+            (mi, bi)
+            for mi, bi in positions[: max(0, len(positions) - EPOCH_KEEP_RECENT)]
+            if messages[mi]["content"][bi].get("tool_use_id") not in _cleared_ids
+        ]
+        clearable = sum(
+            len(_content_text_and_hash(messages[mi]["content"][bi].get("content"))[0])
+            for mi, bi in candidates
+        )
+        # Batch rule: only fire if the epoch reclaims enough to amortize the
+        # one-time cache re-write (break-even; see ORIGINAL_IDEAS.md).
+        if candidates and clearable >= EPOCH_CLEAR_AT_LEAST:
+            _epochs_fired += 1
+            for mi, bi in candidates:
+                block = messages[mi]["content"][bi]
+                _cleared_ids.add(block.get("tool_use_id"))
+                block["content"] = epoch_placeholder(block.get("content"))
+                block.pop("is_error", None)
+            stats["epoch_fired"] = True
+            stats["epoch_cleared_chars"] = clearable
+            changed = True
+    stats["epochs_fired_total"] = _epochs_fired
+    stats["cleared_ids_total"] = len(_cleared_ids)
+    return changed
 
 
 def cap_text(text: str) -> str:
@@ -171,6 +252,14 @@ def mask_request(body: bytes) -> tuple[bytes, dict]:
         stats["masked"] = capped
         stats["applied"] = capped > 0
         if capped == 0:
+            return body, stats
+        return json.dumps(obj).encode(), stats
+
+    if MODE == "epoch":
+        changed = epoch_transform(obj, positions, stats)
+        stats["masked"] = stats.get("cleared_ids_total", 0)
+        stats["applied"] = changed
+        if not changed:
             return body, stats
         return json.dumps(obj).encode(), stats
 

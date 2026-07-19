@@ -134,6 +134,9 @@ def _mask_proxy(
             "MASK_MODE": mode,
             "MASK_KEEP_N": str(keep_n),
             "MASK_CAP_CHARS": str(cap_chars),
+            # keep head+tail comfortably under the cap threshold at any setting
+            "MASK_HEAD_CHARS": str(cap_chars // 2),
+            "MASK_TAIL_CHARS": str(cap_chars // 4),
             "MASK_OVERFLOW_DIR": str(overflow_dir),
             "MASK_OVERFLOW_MOUNT": "/meta/obs",
             "MASK_TARGET_MODEL": target_model,
