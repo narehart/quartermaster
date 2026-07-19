@@ -106,20 +106,36 @@ def _api_key_env_file(api_key: str, extra_lines: dict[str, str] | None = None):
 
 
 @contextlib.contextmanager
-def _mask_proxy(meta_dir: Path, target_model: str, mask_enabled: bool, keep_n: int, port: int):
-    """Run the observation-masking egress proxy on the host for the duration
+def _mask_proxy(
+    meta_dir: Path,
+    target_model: str,
+    mask_enabled: bool,
+    keep_n: int,
+    port: int,
+    mode: str = "cap",
+    cap_chars: int = 16000,
+):
+    """Run the observation-transform egress proxy on the host for the duration
     of one agent run. The sandbox reaches it via host.docker.internal:<port>
-    (ANTHROPIC_BASE_URL). Per-request masking stats are written to
-    meta_dir/mask_stats.jsonl. mask_enabled=False is a byte-identical
-    pass-through control (same proxy path, no masking)."""
+    (ANTHROPIC_BASE_URL). Per-request stats are written to
+    meta_dir/mask_stats.jsonl. mode="cap" is the deterministic whale-capping
+    transform (cache-safe); mode="window" is the F2 sliding mask (kept for the
+    record); mask_enabled=False is a byte-identical pass-through control.
+    Cap-mode overflow files go to meta_dir/obs, which the sandbox sees at
+    /meta/obs (meta_dir is bind-mounted at /meta)."""
     stats_path = meta_dir / "mask_stats.jsonl"
+    overflow_dir = meta_dir / "obs"
     env = os.environ.copy()
     env.update(
         {
             "MASK_PORT": str(port),
             "MASK_HOST": "0.0.0.0",
             "MASK_ENABLED": "1" if mask_enabled else "0",
+            "MASK_MODE": mode,
             "MASK_KEEP_N": str(keep_n),
+            "MASK_CAP_CHARS": str(cap_chars),
+            "MASK_OVERFLOW_DIR": str(overflow_dir),
+            "MASK_OVERFLOW_MOUNT": "/meta/obs",
             "MASK_TARGET_MODEL": target_model,
             "MASK_STATS": str(stats_path),
         }
@@ -396,17 +412,23 @@ def run_opus_masked(
     model: str = "claude-opus-4-8",
     keep_n: int = 3,
     mask_enabled: bool = True,
+    mode: str = "cap",
+    cap_chars: int = 16000,
+    arm_label: str | None = None,
     max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
     image: str = AGENT_IMAGE,
     timeout_s: int = DOCKER_RUN_TIMEOUT_S,
     port: int = 8788,
 ) -> dict[str, Any]:
-    """opus-solo scaffold with tail-only observation masking applied by a host
-    egress proxy on ANTHROPIC_BASE_URL. mask_enabled=False runs the identical
-    proxy in pass-through mode (the parity control)."""
+    """opus-solo scaffold with an observation transform applied by a host
+    egress proxy on ANTHROPIC_BASE_URL. mode="cap" = deterministic
+    whale-capping (cache-safe); mode="window" = F2 sliding mask (record only);
+    mask_enabled=False runs the identical proxy path in pass-through mode
+    (the parity control)."""
     meta_dir.mkdir(parents=True, exist_ok=True)
-    arm_label = "opus-masked" if mask_enabled else "opus-passthru"
-    with _mask_proxy(meta_dir, model, mask_enabled, keep_n, port) as stats_path:
+    if arm_label is None:
+        arm_label = ("opus-capped" if mode == "cap" else "opus-masked") if mask_enabled else "opus-passthru"
+    with _mask_proxy(meta_dir, model, mask_enabled, keep_n, port, mode=mode, cap_chars=cap_chars) as stats_path:
         result = run_opus_solo(
             instance,
             repo_path,
@@ -419,7 +441,7 @@ def run_opus_masked(
             base_url=f"http://host.docker.internal:{port}",
             arm_label=arm_label,
         )
-    result["masking"] = _summarize_mask_stats(stats_path, mask_enabled, keep_n)
+    result["masking"] = {"mode": mode, "cap_chars": cap_chars, **_summarize_mask_stats(stats_path, mask_enabled, keep_n)}
     return result
 
 

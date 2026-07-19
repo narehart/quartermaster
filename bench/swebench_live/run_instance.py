@@ -60,13 +60,16 @@ PREWALK_ARMS = {
     "prewalk-haiku": metrics.EXECUTOR_MODEL_HAIKU,
 }
 
-# Masking arms: pure opus-4-8 scaffold (like opus-solo) with tail-only
-# observation masking applied by the host egress proxy. opus-masked masks;
-# opus-passthru runs the identical proxy in pass-through mode (parity control).
-# Value = mask_enabled.
+# Proxy-transform arms: pure opus-4-8 scaffold (like opus-solo) with an
+# observation transform applied by the host egress proxy.
+#   opus-capped   -- deterministic whale-capping (cache-safe; the live candidate)
+#   opus-masked   -- F2 sliding-window mask (cache-hostile; kept for the record)
+#   opus-passthru -- identical proxy path, no transform (parity control)
+# Value = (mode, mask_enabled).
 MASKED_ARMS = {
-    "opus-masked": True,
-    "opus-passthru": False,
+    "opus-capped": ("cap", True),
+    "opus-masked": ("window", True),
+    "opus-passthru": ("cap", False),
 }
 
 
@@ -135,13 +138,15 @@ def main() -> None:
             "opus-solo",
             "prewalk-sonnet",
             "prewalk-haiku",
+            "opus-capped",
             "opus-masked",
             "opus-passthru",
             "gold",
         ],
     )
     ap.add_argument("--max-budget-usd", type=float, default=agent_runner.DEFAULT_MAX_BUDGET_USD)
-    ap.add_argument("--keep-n", type=int, default=3, help="masking arms: tool observations kept full-fidelity")
+    ap.add_argument("--keep-n", type=int, default=3, help="window mode: tool observations kept full-fidelity")
+    ap.add_argument("--cap-chars", type=int, default=16000, help="cap mode: per-part cap threshold in chars")
     ap.add_argument("--results-root", default=str(RESULTS_ROOT))
     ap.add_argument("--work-root", default=str(WORK_ROOT))
     ap.add_argument("--wave", default="")
@@ -204,6 +209,7 @@ def main() -> None:
             )
             patch = agent_runner.extract_patch(repo_path)
         elif arm in MASKED_ARMS:
+            mode, mask_enabled = MASKED_ARMS[arm]
             run_result = agent_runner.run_opus_masked(
                 instance,
                 repo_path,
@@ -211,7 +217,10 @@ def main() -> None:
                 api_key=os.environ["ANTHROPIC_API_KEY"],
                 model=PLANNER_MODEL,
                 keep_n=args.keep_n,
-                mask_enabled=MASKED_ARMS[arm],
+                mask_enabled=mask_enabled,
+                mode=mode,
+                cap_chars=args.cap_chars,
+                arm_label=arm,
                 max_budget_usd=args.max_budget_usd,
             )
             patch = agent_runner.extract_patch(repo_path)

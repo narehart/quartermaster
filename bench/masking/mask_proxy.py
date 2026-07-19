@@ -20,30 +20,102 @@ logged. Only masking COUNTS (never message content or headers) are recorded.
 Env config:
   MASK_PORT           listen port (default 8788)
   MASK_HOST           bind host (default 0.0.0.0 so a Docker sandbox can reach it)
-  MASK_ENABLED        1 to mask, 0 for pass-through control (default 1)
-  MASK_KEEP_N         most-recent tool_result blocks kept at full fidelity (default 3)
-  MASK_TARGET_MODEL   only mask requests whose "model" contains this (default claude-opus-4)
-  MASK_STATS          optional path to append per-request JSONL masking stats
+  MASK_ENABLED        1 to transform, 0 for pass-through control (default 1)
+  MASK_MODE           "window" (sliding-window masking; PROVEN CACHE-HOSTILE,
+                      kept for the F2 record) or "cap" (deterministic
+                      whale-capping; cache-safe by construction) (default cap)
+  MASK_KEEP_N         window mode: most-recent tool_result blocks kept (default 3)
+  MASK_CAP_CHARS      cap mode: threshold above which a text part is capped
+                      (default 16000 chars ~= 4k tokens)
+  MASK_HEAD_CHARS     cap mode: chars kept from the head (default 8000)
+  MASK_TAIL_CHARS     cap mode: chars kept from the tail (default 4000)
+  MASK_OVERFLOW_DIR   cap mode: host dir where full outputs are written for
+                      re-fetch; the note references its in-sandbox mount
+  MASK_OVERFLOW_MOUNT cap mode: the path where MASK_OVERFLOW_DIR is visible
+                      INSIDE the sandbox (default /meta/obs)
+  MASK_TARGET_MODEL   only transform requests whose "model" contains this
+                      (default claude-opus-4)
+  MASK_STATS          optional path to append per-request JSONL stats
   ANTHROPIC_UPSTREAM  upstream host (default api.anthropic.com)
+
+Cache-safety invariant for cap mode: the transform is a PURE FUNCTION of the
+text content (hash-keyed, no age/position/counter dependence), so a given
+tool_result serializes to identical bytes in every request that carries it —
+the cached prefix stays byte-stable. This is the structural fix for the F2
+sliding-window pathology (bench/docs/SWEBENCH_LIVE_ANALYSIS.md).
 """
 
+import hashlib
 import http.client
 import json
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlsplit
 
 PORT = int(os.environ.get("MASK_PORT", "8788"))
 HOST = os.environ.get("MASK_HOST", "0.0.0.0")
 ENABLED = os.environ.get("MASK_ENABLED", "1") == "1"
+MODE = os.environ.get("MASK_MODE", "cap")
 KEEP_N = int(os.environ.get("MASK_KEEP_N", "3"))
+CAP_CHARS = int(os.environ.get("MASK_CAP_CHARS", "16000"))
+HEAD_CHARS = int(os.environ.get("MASK_HEAD_CHARS", "8000"))
+TAIL_CHARS = int(os.environ.get("MASK_TAIL_CHARS", "4000"))
+OVERFLOW_DIR = os.environ.get("MASK_OVERFLOW_DIR", "")
+OVERFLOW_MOUNT = os.environ.get("MASK_OVERFLOW_MOUNT", "/meta/obs")
 TARGET = os.environ.get("MASK_TARGET_MODEL", "claude-opus-4")
 STATS_PATH = os.environ.get("MASK_STATS", "")
 UPSTREAM = os.environ.get("ANTHROPIC_UPSTREAM", "api.anthropic.com")
 
 PLACEHOLDER = "[observation masked to save context; re-run the tool if you need this output again]"
+CAP_MARKER = "[[QM-CAPPED "  # idempotency sentinel: never re-cap our own output
 _req_counter = 0
+
+
+def cap_text(text: str) -> str:
+    """Deterministic whale-cap: pure function of `text` (hash-keyed, no
+    age/position dependence), so the same content always serializes to the
+    same bytes -> cache-stable. Writes the full text to the overflow dir
+    (idempotent, hash-named) so the agent can re-fetch; the note points at
+    the IN-SANDBOX mount and instructs chunked Reads (offset/limit) so a
+    re-fetched whale isn't just capped again."""
+    if len(text) <= CAP_CHARS or CAP_MARKER in text:
+        return text
+    digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:16]
+    if OVERFLOW_DIR:
+        p = Path(OVERFLOW_DIR)
+        p.mkdir(parents=True, exist_ok=True)
+        f = p / f"{digest}.txt"
+        if not f.exists():
+            f.write_text(text, errors="replace")
+    note = (
+        f"\n\n{CAP_MARKER}{digest}]] output capped to save context: showing first "
+        f"{HEAD_CHARS} and last {TAIL_CHARS} of {len(text)} chars. Full output saved at "
+        f"{OVERFLOW_MOUNT}/{digest}.txt — Read it with offset/limit to view specific "
+        f"sections (do NOT read it whole).\n\n"
+    )
+    return text[:HEAD_CHARS] + note + text[-TAIL_CHARS:]
+
+
+def cap_block_content(content: object) -> tuple[object, int]:
+    """Apply cap_text to a tool_result's content (string or list of text
+    parts). Returns (new_content, n_capped_parts)."""
+    if isinstance(content, str):
+        new = cap_text(content)
+        return new, (1 if new is not content and new != content else 0)
+    if isinstance(content, list):
+        n = 0
+        out = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str):
+                new_text = cap_text(part["text"])
+                if new_text != part["text"]:
+                    part = {**part, "text": new_text}
+                    n += 1
+            out.append(part)
+        return (out, n) if n else (content, 0)
+    return content, 0
 
 
 def log(msg: str) -> None:
@@ -63,8 +135,10 @@ def record_stats(entry: dict) -> None:
 
 def mask_request(body: bytes) -> tuple[bytes, dict]:
     """Return (possibly-rewritten body, stats). Never raises: on any parse
-    problem the original body is forwarded unchanged."""
-    stats = {"masked": 0, "total_tool_results": 0, "model": None, "applied": False}
+    problem the original body is forwarded unchanged. Dispatches on MASK_MODE:
+    "cap" (deterministic whale-capping, cache-safe) or "window" (sliding-window
+    masking, cache-hostile, kept for the F2 record)."""
+    stats = {"masked": 0, "total_tool_results": 0, "model": None, "applied": False, "mode": MODE}
     try:
         obj = json.loads(body)
     except (ValueError, UnicodeDecodeError):
@@ -85,6 +159,22 @@ def mask_request(body: bytes) -> tuple[bytes, dict]:
                 if isinstance(block, dict) and block.get("type") == "tool_result":
                     positions.append((mi, bi))
     stats["total_tool_results"] = len(positions)
+
+    if MODE == "cap":
+        capped = 0
+        for mi, bi in positions:
+            block = messages[mi]["content"][bi]
+            new_content, n = cap_block_content(block.get("content"))
+            if n:
+                block["content"] = new_content
+                capped += n
+        stats["masked"] = capped
+        stats["applied"] = capped > 0
+        if capped == 0:
+            return body, stats
+        return json.dumps(obj).encode(), stats
+
+    # window mode (legacy, cache-hostile)
     if len(positions) <= KEEP_N:
         return body, stats
     masked = 0
@@ -184,8 +274,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    mode = "MASK" if ENABLED else "PASSTHROUGH(control)"
-    log(f"listening on {HOST}:{PORT} mode={mode} keep_n={KEEP_N} target={TARGET!r} upstream={UPSTREAM}")
+    mode = f"{MODE.upper()}" if ENABLED else "PASSTHROUGH(control)"
+    log(
+        f"listening on {HOST}:{PORT} mode={mode} keep_n={KEEP_N} cap_chars={CAP_CHARS} "
+        f"target={TARGET!r} upstream={UPSTREAM}"
+    )
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 
