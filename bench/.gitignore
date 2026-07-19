@@ -16,3 +16,7 @@ hf_cache/
 # above never accidentally catch them)
 !results/swebench_live_baseline_results.csv
 !swebench_live/swebench_live_subset.json
+
+# external eval code clone (setup step, not vendored)
+vendor/
+swebench_live/vendor/
