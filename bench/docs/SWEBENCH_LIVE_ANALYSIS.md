@@ -214,6 +214,55 @@ the mutation-of-cached-content flaw is fatal regardless of magnitude).
 management / at-source frozen reduction / reference-and-refetch) — see the
 research sweep feeding `TOKEN_REDUCTION_CANDIDATES.md`.
 
+### F3 — Whale-capping at 16k chars: safe but INERT on this distribution (n=25)
+
+Full run (25 capped + 3 parity, 0 errors, $24.96). All mechanism gates PASSED:
+cc/cr median 0.036 (no F2 cache pathology — the pure content-keyed transform
+is cache-stable at scale), median turns 18 vs 18 (no F1 re-fetch flailing),
+quality preserved (7/25 vs 8/25, CI [−12%, 0%]). The E2E probe also proved
+the quality net works (agent recovered mid-file content the cap removed).
+
+**But capping fired on only 2/25 runs (59 events).** At the preregistered
+16k-char threshold, >16k observations are too rare on this scaffold — 23/25
+runs were byte-identical to control. The formal cost read (cost/solved ratio
+1.32, CI [1.01, 2.08]) is noise-dominated, not causal: untouched runs also
+trended pricier (A4 same-day trajectory variance; whale-run 1633's $1.93
+matches its no-cap passthru twin's $2.00). Verdict: **no measurable cost
+effect — the technique as parameterized is inert here**, consistent with our
+mining (tool output ≈14% of median context; the mass is the standing prefix
+and the conversation, and per-observation sizes mostly sit under 16k chars).
+
+**Options forward:** (i) threshold sweep at ~4k chars — engages broadly,
+real reduction mass, real quality risk (the actual test of at-source capping;
+~$18, config-only change on the resume-safe driver); (ii) pivot to the
+(b)-class tail-targeted epoch clearing (ORIGINAL_IDEAS idea 2) — attacks the
+conversation mass on tail runs where the break-even math says the money is;
+(iii) prefix slimming (idea 4) for the median-run mass. The bench has now
+cheaply killed/nulled three techniques (prewalk, sliding-mask, 16k-cap) —
+the discipline is working.
+
+### A4 — Capping-experiment parity criterion (c) fired as-written; judged mis-specified
+
+PREREG_CAPPING.md kill-criterion (c) said: parity arm within 10% of paired
+baseline per-run tokens, else escalate to a fresh full control. The n=3
+passthru runs came in at 2.44×, 0.58×, 2.00× tokens — formally a trip.
+
+**Root-cause: trajectory stochasticity, not proxy overhead.** Token deltas
+track turn deltas exactly (27→42, 35→16, 14→17 turns); the proxy altered
+ZERO bytes (0 transform events; byte-identical forwarding verified at the
+plumbing level), so it cannot shift the trajectory distribution. Same-instance
+independent re-runs vary ~2× in turns across ALL our data (e.g. 6→34), so a
+±10% n=3 token-parity test was never passable and was mis-designed.
+
+**Decision (recorded before capped-arm results were known):** proceed without
+the $18 fresh control. The criterion's intent — "does the proxy itself add
+tokens?" — is answered mechanically (byte-identical requests) more strongly
+than an n=3 statistical test could. Consequence for analysis: within-instance
+run-to-run variance is LARGE; the paired n=25 bootstrap absorbs it as noise,
+and the final writeup must report it as the dominant uncertainty. A fresh
+n=25 unmasked control remains available (resume-safe driver) if the capped
+arm's result is borderline.
+
 ### A2 — validator `resolved` field (RESOLVED: fixed)
 
 `validate_arm.py` initially read `eval.resolved`; the SWE-bench verdict
