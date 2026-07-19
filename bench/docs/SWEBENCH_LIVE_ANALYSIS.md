@@ -178,6 +178,42 @@ literally). NOT changed mid-arm here — the alias resolved to the same dated
 model across all runs, so the data is consistent; editing the running
 runner's source would risk the in-flight arm.
 
+### F2 — Sliding-window observation masking is cache-hostile (n=1, mechanism confirmed)
+
+**Setup.** Tail-only observation masking applied to the real agent CLI via a
+host egress proxy on ANTHROPIC_BASE_URL (`bench/masking/mask_proxy.py`):
+replace all but the most-recent N=3 `tool_result` blocks with a placeholder.
+Validated the mechanism end-to-end (proxy honored, masking fires, pins clean).
+
+**Result (ipython-14969, opus-masked vs opus-solo on the same instance):**
+| | opus-solo | opus-masked (keep_n=3) |
+|---|---|---|
+| turns | 6 | 34 |
+| true cost | ~$0.13 | **$3.63 (~28×)** |
+| cache_creation/cache_read | ~0.05 | **0.39** |
+| resolved | (baseline) | False |
+
+**Mechanism (confirmed per-turn, not sampling noise):** cache_creation stays
+high across the run — 37 of 52 model calls > 10k cache_creation. A SLIDING
+mask window flips a different observation from full→masked EVERY turn, mutating
+the already-cached prefix, so the whole suffix re-creates at cache_creation
+(1.25–2×) turn after turn. Masking cuts token COUNT but converts the cheapest
+tokens (warm cache_read, 0.1×) into the most expensive (cold cache_creation).
+Plus turn-inflation (6→34) from the agent losing observations and re-exploring.
+
+**Conclusion.** Any technique that MUTATES already-sent (cached) content is
+disqualified on a prompt-cached agent. The paper's "~52% cut" (The Complexity
+Trap, measured WITHOUT prompt caching) does not survive contact with caching.
+This is the SECOND technique the cache-aware cost-per-solved discipline has
+killed (after prewalk's turn-inflation) — strong validation of the bench.
+n=1, but the cache mechanism is a structural certainty; the 28× magnitude and
+turn-inflation are n=1 and would need confirmation IF pursued (they are not:
+the mutation-of-cached-content flaw is fatal regardless of magnitude).
+
+**Next:** cache-SAFE + quality-SAFE tool-output reduction (native context
+management / at-source frozen reduction / reference-and-refetch) — see the
+research sweep feeding `TOKEN_REDUCTION_CANDIDATES.md`.
+
 ### A2 — validator `resolved` field (RESOLVED: fixed)
 
 `validate_arm.py` initially read `eval.resolved`; the SWE-bench verdict

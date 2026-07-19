@@ -86,19 +86,27 @@ baseline).
   reuse the existing opus-solo run as the control or must run a fresh
   same-scaffold unmasked control.
 
-## Arms & implementation — PENDING MECHANISM DECISION
+## Arms & implementation — LOCKED (mechanism resolved)
 
-Two candidate designs, chosen once the Claude Code mechanism is known:
+**Mechanism (validated):** masking is applied by a host egress proxy on
+`ANTHROPIC_BASE_URL` (`bench/masking/mask_proxy.py`). The agent CLI honors the
+var (confirmed by a dead-port test) and posts its full context to
+`/v1/messages?beta=true` every turn; the proxy rewrites the outbound request,
+replacing all but the most-recent N `tool_result` blocks with a placeholder,
+leaving the system/tools cache prefix and the recent tail intact. This is
+**scaffold-preserving** — the same agent CLI does the work, so the existing
+opus-solo baseline is a valid unmasked control.
 
-- **If a CLI PostToolUse-style hook can rewrite tool-result content
-  in-context:** arms = existing opus-solo (unmasked, CLI) vs opus-masked
-  (CLI + masking hook), same 25-instance subset, paired. Reuses the baseline
-  as control — no re-spend on the control arm.
-- **If masking requires the Claude Agent SDK message loop:** arms =
-  unmasked-SDK vs masked-SDK, BOTH freshly run on the subset (the CLI
-  opus-solo data is NOT a valid control — different scaffold). More runs, but
-  isolates masking.
+**Arms (all on the same 25-instance subset, exact pin `claude-opus-4-8`,
+verified per run):**
+- **control = existing opus-solo** (no proxy) — reused, no re-spend.
+- **opus-masked** = opus-solo scaffold + masking proxy (keep_n=3).
+- **opus-passthru parity check (n≈3)** = opus-solo scaffold + proxy in
+  pass-through mode (MASK_ENABLED=0). Confirms the proxy itself adds ~0 tokens
+  vs no-proxy opus-solo, justifying reuse of opus-solo as the control. If
+  parity FAILS (proxy materially changes token counts), escalate to a full
+  fresh opus-passthru control arm (n=25).
 
-Model held constant across arms (Opus, matching the existing baseline's
-long-trajectory regime where masking should help most). Exact model pin
-`claude-opus-4-8`, verified per run.
+Paired bootstrap: opus-masked vs opus-solo over the instance intersection.
+Model held constant (Opus) — the baseline's long-trajectory regime is exactly
+where masking should help most.

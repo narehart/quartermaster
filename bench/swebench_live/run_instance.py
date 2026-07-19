@@ -60,6 +60,15 @@ PREWALK_ARMS = {
     "prewalk-haiku": metrics.EXECUTOR_MODEL_HAIKU,
 }
 
+# Masking arms: pure opus-4-8 scaffold (like opus-solo) with tail-only
+# observation masking applied by the host egress proxy. opus-masked masks;
+# opus-passthru runs the identical proxy in pass-through mode (parity control).
+# Value = mask_enabled.
+MASKED_ARMS = {
+    "opus-masked": True,
+    "opus-passthru": False,
+}
+
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] {msg}", flush=True)
@@ -120,9 +129,19 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--instance-id", required=True)
     ap.add_argument(
-        "--arm", required=True, choices=["opus-solo", "prewalk-sonnet", "prewalk-haiku", "gold"]
+        "--arm",
+        required=True,
+        choices=[
+            "opus-solo",
+            "prewalk-sonnet",
+            "prewalk-haiku",
+            "opus-masked",
+            "opus-passthru",
+            "gold",
+        ],
     )
     ap.add_argument("--max-budget-usd", type=float, default=agent_runner.DEFAULT_MAX_BUDGET_USD)
+    ap.add_argument("--keep-n", type=int, default=3, help="masking arms: tool observations kept full-fidelity")
     ap.add_argument("--results-root", default=str(RESULTS_ROOT))
     ap.add_argument("--work-root", default=str(WORK_ROOT))
     ap.add_argument("--wave", default="")
@@ -184,6 +203,18 @@ def main() -> None:
                 max_budget_usd=args.max_budget_usd,
             )
             patch = agent_runner.extract_patch(repo_path)
+        elif arm in MASKED_ARMS:
+            run_result = agent_runner.run_opus_masked(
+                instance,
+                repo_path,
+                meta_dir,
+                api_key=os.environ["ANTHROPIC_API_KEY"],
+                model=PLANNER_MODEL,
+                keep_n=args.keep_n,
+                mask_enabled=MASKED_ARMS[arm],
+                max_budget_usd=args.max_budget_usd,
+            )
+            patch = agent_runner.extract_patch(repo_path)
         elif arm in PREWALK_ARMS:
             run_result = agent_runner.run_prewalk(
                 instance,
@@ -212,7 +243,7 @@ def main() -> None:
                 f"cost_usd={log_metrics.get('true_cost_usd')} "
                 f"models={log_metrics.get('distinct_models')}"
             )
-            if arm == "opus-solo":
+            if arm == "opus-solo" or arm in MASKED_ARMS:
                 expected = [PLANNER_MODEL]
             elif arm in PREWALK_ARMS:
                 expected = [PLANNER_MODEL, PREWALK_ARMS[arm]]

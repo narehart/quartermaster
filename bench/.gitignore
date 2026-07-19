@@ -20,3 +20,7 @@ hf_cache/
 # external eval code clone (setup step, not vendored)
 vendor/
 swebench_live/vendor/
+
+# HF dataset cache (regenerable)
+*_dataset_cache.jsonl
+full_dataset_cache.jsonl
