@@ -1,5 +1,69 @@
 # Token-reduction candidates for Quartermaster (research memo)
 
+## v2 synthesis (2026-07-20) — after the F2 cache-hostility finding
+
+A second sweep (native Anthropic context management, the context-mode plugin
+dissected at source level, a cache-focused arXiv pass) plus our own trajectory
+mining (see ORIGINAL_IDEAS.md) converges on one architecture with three
+cache-safe component classes:
+
+- **(a) Shrink at creation, then FREEZE** — the transform must be a pure
+  function of the observation's content (never its age/position), so every
+  request carries identical bytes and the prefix stays cache-stable.
+  Evidence: SWE-Pruner (arXiv:2601.16746 — 23–54% reduction on SWE-bench
+  Verified with IMPROVED solve rate), CoACT (2607.02911 — 33%, next-action
+  invariance as the quality gate), TokenPilot's ingestion pass (2606.17016),
+  context-mode's >5KB indexing threshold, our "cap the whales" (top-3
+  observations = 71% of tool bytes).
+- **(b) Infrequent batched clearing that re-anchors** — threshold-gated,
+  fire-once-and-freeze; never per-turn. Evidence: Anthropic's native
+  `clear_tool_uses` (invalidates prefix per firing, amortized via
+  clear_at_least; +29% quality on their evals), Self-Compacting Agents
+  (2606.23525 — semantic when-to-fire rubric), TokenPilot's lifecycle
+  eviction (B=3 batching), CWL (2606.11213 — τ≈50k up to 3× cheaper, τ>120k
+  waste). Our break-even derivation (ORIGINAL_IDEAS.md) — refined with the
+  stable prefix P: clearing D from context S pays iff expected remaining
+  turns n* > [1.25·(S−D−P) − 0.1·(S−P)] / (0.1·D). NO published closed-form
+  policy exists — our data + this derivation is a publishable note.
+- **(c) Externalize with retrieval handles** — full output goes to an
+  external store; a frozen preview + deterministic handle stays in context;
+  the agent drills in on demand. Quality-safe because nothing is
+  unrecoverable. Evidence: context-mode's SQLite FTS5 + ctx_search,
+  TokenPilot's artifact registry, Demand Paging (2603.09023 — the
+  architectural twin of our egress proxy, 0.03% fault rate).
+
+**The field has independently confirmed F2:** TokenPilot names the "text
+sparsity vs prompt cache continuity" trade-off; CWL describes verbatim the
+perpetual-cache-write regime we measured at 28×. And the papers our first
+sweep ranked highest (Complexity Trap, AgentDiet, Less-Context) are all
+cache-HOSTILE with no caching in their cost models — their claimed savings
+invert under a cached API, exactly as we measured. Cache accounting is the
+difference between literature and truth here.
+
+**context-mode plugin verdict** (mksglu/context-mode, source-verified):
+cache-safe by construction (prevention-at-append, never mutates history) —
+but publishes only byte-compression numbers (96–98%): no cost-per-solved, no
+quality eval, no cache accounting, and an unmeasured deny-and-retry
+turn-inflation tax (our F1 mode in miniature). Our bench can produce the
+first honest evaluation of this class. Two ideas adopted: the >5KB
+overflow-indexing threshold and the isStructurallyBounded allowlist; one
+warning adopted: ~60% compliance for instruction-only routing (tempers any
+prompt-steering-only arm).
+
+**Next experiment (class a, cheapest, highest yield-to-risk): deterministic
+whale-capping via the existing egress proxy** — cap tool_result blocks above
+a size threshold with a pure content-hash-keyed transform (head + tail +
+overflow note), identical in every request (cache-stable), overflow written
+to a sandbox-readable file for re-fetch (quality net). Control = existing
+opus-solo. Mechanism gates: cc/cr stays ~0.05; n_turns must not inflate;
+re-fetch count reported. See PREREG update.
+
+---
+
+## v1 memo (2026-07-19) — pre-F2; cache-naive rankings below are SUPERSEDED
+(The Complexity Trap ranking in particular: its technique is cache-hostile
+and was killed by F2. Kept for the record.)
+
 Synthesis of a 4-scout arXiv sweep (2024–2026), filtered through Quartermaster's
 pivoted rule: **only ship techniques that PROVABLY reduce token cost on
 long-horizon SWE tool-use work WITHOUT hurting resolve rate**, implementable as
