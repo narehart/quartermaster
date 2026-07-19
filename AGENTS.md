@@ -3,6 +3,20 @@
 Canonical contributor + agent guide for Quartermaster. Read this before
 touching anything in the repo.
 
+## Mission (pivot)
+
+Quartermaster's goal is to **reduce token cost on long-horizon agentic
+software-engineering tasks without compromising quality.** The governing rule:
+the plugin ships only techniques a preregistered benchmark ([`bench/`](bench/),
+SWE-bench Live, cost-per-solved, cache-aware) shows clear that bar — nothing is
+grandfathered. Current status: **no token-reduction technique is
+confirmed-shipped yet.** The original tool-governance mechanism (below) is
+measured cost-neutral-to-worse and remains for governance value only; `prewalk`
+(model-swap) was tested on the bench and does **not** clear the bar on
+real-repo work (see `bench/docs/SWEBENCH_LIVE_ANALYSIS.md`). The candidate
+pipeline is `bench/docs/TOKEN_REDUCTION_CANDIDATES.md`. Do not write a
+cost-reduction claim anywhere in this repo that the bench has not earned.
+
 ## Overview
 
 Quartermaster is a Claude Code plugin that provides least-privilege tool

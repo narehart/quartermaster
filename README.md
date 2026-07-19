@@ -1,6 +1,47 @@
 # Quartermaster
 
-**Least-privilege tool governance and enforced delegation for Claude Code, with cost-tiered sub-agents and MCP tool tiering.**
+**A discipline for reducing token cost on long-horizon agentic
+software-engineering work — without sacrificing quality. A technique ships only
+when a preregistered benchmark proves it clears that bar.**
+
+## Mission
+
+Quartermaster's goal is to cut the token cost of long-running Claude Code
+sessions on real daily development work, holding task success constant. It is
+governed by one rule: **the plugin contains only techniques that the benchmark
+in [`bench/`](bench/) shows reduce cost without hurting quality.** Nothing is
+grandfathered — including the plugin's own original mechanism.
+
+## Status — honest and evidence-based
+
+- **The bench is live.** [`bench/`](bench/) is a preregistered **SWE-bench
+  Live** cost-per-solved harness with exact model pins and cache-aware token
+  accounting. See [bench/README.md](bench/README.md).
+- **No token-reduction technique is confirmed-shipped yet** — the project is in
+  active evaluation, and this README will not claim a cost win before the bench
+  earns it.
+  - The original mechanism — least-privilege **tool governance + enforced
+    delegation** (documented below) — is measured **cost-neutral-to-worse**,
+    not a cost reduction. It remains for its *governance* value, not as a cost
+    win. [The A/B result.](docs/benchmarks/2026-07-cost-ab.md)
+  - **prewalk** (run Opus until the first edit, then resume on a cheaper
+    executor) was the first cost technique put through the new bench. On
+    real-repo work it does **not** clear the bar: the cheaper-per-token
+    executor is erased by turn-inflation (directional, n=25).
+    [Analysis.](bench/docs/SWEBENCH_LIVE_ANALYSIS.md)
+  - **Next:** per-turn **context reduction** (tail-only observation masking,
+    trajectory pruning, cache-aware prompt ordering) — the literature's
+    quality-neutral cost wins.
+    [Candidate pipeline.](bench/docs/TOKEN_REDUCTION_CANDIDATES.md)
+
+---
+
+## The current mechanism: least-privilege tool governance + delegation
+
+This is Quartermaster's original mechanism. It provides real least-privilege
+governance, but — per the Status above — it is **not** a proven cost reduction;
+it is documented here as the shipped governance behavior, pending
+bench-validated cost techniques.
 
 A tool-restricted orchestrator runs your main session: it reads and searches
 the codebase to plan and review, invokes skills, and tracks tasks — but it
