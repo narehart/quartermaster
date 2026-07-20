@@ -241,6 +241,64 @@ conversation mass on tail runs where the break-even math says the money is;
 cheaply killed/nulled three techniques (prewalk, sliding-mask, 16k-cap) —
 the discipline is working.
 
+### F4 — cap4k: fully engaged at-source capping still does not reduce cost (n=25)
+
+Dose-response arm (4k-char threshold): engagement fixed — 19/25 runs, 1,882
+cap events. All safety gates PASS (cc/cr 0.026; turns 16 vs 18; quality
+7/25 vs 8/25, CI [−16%, +8%]). Cost: total 1.38×, cost/solved ratio median
+**1.59** CI [0.89, 3.01] — NOT cheaper despite heavy engagement and zero
+mechanism pathology.
+
+**This confirms the caching-collapse arithmetic:** capped tokens are mostly
+0.1×-rate cache_reads plus a one-time 1.25× write — removing a 5k-token whale
+from a 30-turn run saves ~2% of run cost. At-source context reduction is
+economically inert on a prompt-cached agent, at any threshold.
+
+### F5 — epoch clearing: fires rarely (by design) and HURTS when it fires (n=25, treated n=2)
+
+Tail-targeted clearing (trigger 50k tok, keep 5, clear_at_least 60k chars):
+fired on 2/25 runs, as the distribution predicted. Arm overall: 5/25 resolved
+vs 8/25 (CI [−24%, 0%] — formally passes, but the worst quality point
+estimate of the campaign); cost/solved ratio median **1.99** CI [1.16, 4.98].
+
+**The treated runs are the signal.** Both runs where an epoch fired blew up:
+- a2a-python-443: **71 turns vs 28** baseline, $2.74 vs $1.09
+- SDV-2658: 58 vs 47 turns, $3.61 vs $1.70, **and lost the baseline's solve**
+
+n=2, but 2.5× turn-inflation is far beyond the same-day variance envelope.
+Mechanism: clearing dropped observations the agent still needed; it
+re-explored (F1 signature) and in one case failed a task the baseline solved.
+The re-fetch quality net did not compensate. Anthropic's "+29% with context
+editing" (their own agentic evals) did NOT transfer to this coding workload.
+(Reporting note: the per-run "cleared events" counter sums cumulative
+per-request totals — an artifact; distinct cleared ids are lower. Verdicts
+rest on cost/turns/resolve, not this counter.)
+
+### CAMPAIGN CONCLUSION (rounds 0–2, five techniques, n=25 each, directional)
+
+| technique | class | cost/solved vs opus-solo | quality | mechanism |
+|---|---|---|---|---|
+| prewalk-sonnet | model swap | 1.35× [0.97,2.42] | ~flat | executor turn-inflation |
+| prewalk-haiku | model swap | 0.86× [0.60,1.62] | −8% (lost 2 solves) | discount > inflation, capability pays |
+| sliding-mask | context (per-turn) | ~28× (killed at smoke) | — | perpetual cache_creation (F2) |
+| whale-cap 16k | context (at-source) | inert (fired 2/25) | preserved | whales too rare |
+| cap4k | context (at-source) | 1.59× [0.89,3.01] | preserved | caching-collapse: capped tokens were cheap |
+| epoch clearing | context (batched clear) | 1.99× [1.16,4.98] | worst point est. | treated runs flailed (2.5× turns, lost solve) |
+
+**On a prompt-cached, API-priced coding agent, context-size reduction does
+not reduce cost-per-solved.** Prompt caching already collapsed the context
+term (re-reads at 0.1×); what remains binding is TURNS (each re-reads
+everything and emits full-price output tokens) and OUTPUT tokens (5× input,
+never discounted). Every context technique either did nothing (cheap tokens
+removed), paid a cache-invalidation tax (F2), or destabilized the agent into
+extra turns (F5) — and extra turns cost more than context ever saved.
+The cache-blind literature (52–96% "savings" claims) does not survive
+cache-priced, quality-gated measurement on fresh SWE tasks.
+
+**Implication for round 3:** attack turns and output tokens directly —
+early-stopping of doomed trajectories, recon batching (parallel tool calls),
+anti-re-exploration scaffolding — measured on this same rig.
+
 ### A4 — Capping-experiment parity criterion (c) fired as-written; judged mis-specified
 
 PREREG_CAPPING.md kill-criterion (c) said: parity arm within 10% of paired
