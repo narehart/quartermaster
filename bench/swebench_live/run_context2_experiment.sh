@@ -66,9 +66,12 @@ check_budget() {
 }
 
 run_arm() {
+  # $1 = arm; remaining args are passed through to run_instance.py via "$@".
+  # NOTE: deliberately NOT captured into a local array -- expanding an EMPTY
+  # array under `set -u` on macOS bash 3.2 is an "unbound variable" error
+  # (this killed the epoch phase on 2026-07-20; "$@" itself is exempt).
   local arm="$1"
   shift
-  local extra_args=("$@")
   log "PHASE_START arm=$arm n=$N_TOTAL"
   local n_err=0 count=0
   for instance_id in "${ALL_INSTANCE_IDS[@]}"; do
@@ -79,7 +82,7 @@ run_arm() {
     log "RUN arm=$arm instance_id=$instance_id"
     if "$PY" run_instance.py --instance-id "$instance_id" --arm "$arm" \
       --results-root "$RESULTS_ROOT" --work-root "$WORK_ROOT" \
-      --max-budget-usd "$PER_RUN_BUDGET_USD" "${extra_args[@]}"; then
+      --max-budget-usd "$PER_RUN_BUDGET_USD" "$@"; then
       log "RUN_OK arm=$arm instance_id=$instance_id"
     else
       n_err=$((n_err + 1))
