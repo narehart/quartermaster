@@ -1,81 +1,144 @@
 # Quartermaster
 
-**An evidence-gated search for techniques that reduce token cost on
-long-horizon agentic software-engineering work — without sacrificing quality.**
+## The goal
 
-One rule governs the project: a technique ships only if the preregistered
-benchmark in [`bench/`](bench/) shows it **reduces cost-per-solved without a
-statistically significant drop in resolve rate**, under real cache-tier
-pricing. Nothing is grandfathered — including this project's own original
-mechanism, which is how it earned its first row in the ledger below.
+Find techniques that **reduce the token cost of long-horizon agentic
+software-engineering work** — the kind a coding agent like Claude Code does
+all day — **without sacrificing task success.** One rule governs the project:
+a technique ships only if the preregistered benchmark in [`bench/`](bench/)
+shows it reduces **cost-per-solved** without a statistically significant drop
+in resolve rate, under real cache-tier pricing. Nothing is grandfathered —
+including this project's own original mechanism (ledger row 0).
 
-## The instrument
+## The answer so far
+
+The per-task cost of a cached API agent is approximately:
+
+```
+cost ≈ Σ over turns ( 0.1× cached-context reads  +  1.25× new-token cache writes )
+       + 5× output tokens
+```
+
+**Prompt caching has already collapsed the context term.** Re-read context
+costs 0.1× of the input rate, so removing context tokens saves almost
+nothing — and *mutating* already-sent context is actively catastrophic (it
+re-triggers 1.25× cache writes every turn). After eight preregistered
+experiments, every context-reduction and model-swap technique we tested
+either did nothing or made cost worse. The terms that actually bind are
+**turn count** (each turn re-reads everything and emits full-price output)
+and **output tokens** (5× rate, never discounted). That is where the search
+now points — and the one arm aimed there is the first to trend cheaper on
+every instance.
+
+This is not just our result: it was independently replicated at 40× our
+scale, within days, by
+["Token Reduction Is Not Cost Reduction" (arXiv:2607.12161)](https://arxiv.org/abs/2607.12161)
+(2,848 Claude Code runs — cache traffic ≈87% of billed cost;
+token-reduction↔cost correlation r=0.15).
+
+## How we measure
 
 [`bench/`](bench/) runs **SWE-bench Live** (fresh, contamination-resistant
-GitHub issues) through real Claude Code in per-task Docker sandboxes, with:
-exact model pins verified per run, per-model cache-tier token accounting
-(`cache_read` 0.1×, `cache_creation` 1.25×), paired-bootstrap analysis on
-**cost-per-solved** (never raw token counts), preregistered kill criteria,
-and a public anomaly log. See [bench/README.md](bench/README.md).
+GitHub issues; one-shot Opus resolves ~32% here vs ~70% on the memorized
+SWE-bench Verified) through real Claude Code in per-task Docker sandboxes:
 
-## Experiment ledger
+- **Metric: cost-per-solved** (billed USD ÷ tasks resolved) — never raw token
+  counts, which barely correlate with cost under caching.
+- **Cache-tier accounting**: per-model `cache_read` / `cache_creation` /
+  output tokens from the billing stream, per run.
+- **Preregistration**: metrics, arms, and kill criteria locked by commit
+  before data; every anomaly logged with root cause
+  ([bench/docs/SWEBENCH_LIVE_ANALYSIS.md](bench/docs/SWEBENCH_LIVE_ANALYSIS.md)).
+- **Exact model pins** (`claude-opus-4-8` etc.) verified per run against the
+  observed model sequence.
+- All results to date are **directional** (n=25, small solve-denominators):
+  anything that passes gets a powered confirmation before "shipped" status.
 
-| # | technique | class | verdict | why |
-|---|---|---|---|---|
-| 0 | **Tool-tier delegation** (the original Quartermaster plugin: orchestrator/scout/mechanic/builder) | governance / model routing | ❌ **rejected** | Cost-neutral at Sonnet, **1.39×** at Opus: delegation overhead ~doubles token volume. Governance value real; cost value absent. [Result](docs/benchmarks/2026-07-cost-ab.md) · [legacy docs](docs/legacy-plugin.md) |
-| 1 | **prewalk-sonnet** (Opus plans → swap to Sonnet executor at first edit) | model swap | ❌ rejected | **1.35×** cost/solved: the cheaper executor takes more turns (19→25 median) and turn-inflation eats the per-token discount |
-| 2 | **prewalk-haiku** (same, Haiku executor) | model swap | ❌ rejected | 0.86× cost but **−8% quality** (lost 2 of 8 solves): a cost↔quality trade, not a win |
-| 3 | **Sliding-window observation masking** (keep last N tool results) | context, per-turn | ❌ **killed at smoke** | **~28× cost**: mutating cached history every turn forces perpetual cache re-writes (cc/cr 0.39 vs 0.05). The literature's ~52% claim is cache-blind |
-| 4 | **Whale-capping @16k chars** (cap huge tool outputs at source, frozen, re-fetchable) | context, at-source | ⚪ inert | Fired on 2/25 runs — >16k observations too rare on this distribution |
-| 5 | **Whale-capping @4k chars** (dose-response) | context, at-source | ❌ rejected | Fully engaged (19/25 runs, 1,882 caps), mechanically clean — and still **1.59×**: capped tokens were 0.1×-rate cache reads; there was nothing to save |
-| 6 | **Epoch clearing** (batched, threshold-gated, cache-correct clearing of old observations) | context, batched | ❌ rejected | **1.99×** and the worst quality point-estimate: both treated runs flailed (2.5× turns, one lost solve). Anthropic's context-editing quality claims did not transfer |
-| 7 | **Simple early termination** (abort long/edit-less runs) | turns | ⚪ **screened out, $0 spent** | Corpus mining (103 runs): long runs resolve at ≥ base rate here — an abort rule kills ~4 of 28 solves for ~8% savings. Guaranteed quality failure |
-| 8 | **Output tuning** (efficiency repo-instructions + thinking-budget cap) | output tokens | 🔄 **in evaluation** | First arm aimed at a full-price cost term. Interim (n=6 paired): output tokens 0.56×, cost 0.67×, cheaper on every instance — quality bar pending full n=25 |
+## The ledger — grouped by the cost term attacked
 
-## What the campaign established
+### Attacking the model rate — dead end: *cheap-model substitution induces turn-inflation*
 
-**On a prompt-cached, API-priced coding agent, context-size reduction does not
-reduce cost-per-solved.** Cache reads at 0.1× have already collapsed the
-context term; the binding cost terms are **turn count** and **output tokens**
-(full price, never discounted). Every context technique tested either removed
-already-cheap tokens, paid a cache-invalidation tax, or destabilized the agent
-into extra turns — and extra turns cost more than context ever saved.
+A cheaper executor pays less per token but takes more turns, and each extra
+turn re-reads the whole context and emits full-price output.
 
-Independently replicated at 40× scale within days of our campaign:
-["Token Reduction Is Not Cost Reduction" (arXiv:2607.12161)](https://arxiv.org/abs/2607.12161)
-— prompt-cache traffic ≈87% of billed cost; token-reduction↔cost correlation
-r=0.15. The cache-blind literature's 50–96% "savings" claims do not survive
-cache-priced, quality-gated measurement.
+| technique | verdict | why |
+|---|---|---|
+| **Tool-tier delegation** (the original Quartermaster plugin: restricted orchestrator delegating to cheap sub-agents) | ❌ rejected | Cost-neutral at Sonnet, **1.39×** at Opus — delegation overhead ~doubles token volume. Real governance value, no cost value. [Result](docs/benchmarks/2026-07-cost-ab.md) · [legacy docs](docs/legacy-plugin.md) |
+| **prewalk-sonnet** (Opus plans → Sonnet executes after first edit) | ❌ rejected | **1.35×** cost/solved: executor turn-inflation (median 19→25 turns) eats the ~4× per-token discount |
+| **prewalk-haiku** (same, Haiku executor) | ❌ rejected | 0.86× cost but **−8% quality** (lost 2 of 8 solves) — a cost↔quality trade, not a win |
 
-Full findings (F1–F6), mechanisms, anomaly log, and the clearing break-even
-derivation: [bench/docs/SWEBENCH_LIVE_ANALYSIS.md](bench/docs/SWEBENCH_LIVE_ANALYSIS.md).
+### Attacking the context term — dead end ×2: *mutating cached context pays a write tax; shrinking it removes already-cheap tokens*
+
+| technique | verdict | why |
+|---|---|---|
+| **Sliding-window observation masking** (keep last N tool results, mask older) | ❌ killed at smoke | **~28×** cost: the mask window slides every turn, mutating cached history → perpetual 1.25× cache re-writes (write/read ratio 0.39 vs 0.05 baseline) |
+| **Whale-capping @16k chars** (cap huge tool outputs at first entry, frozen, re-fetchable) | ⚪ inert | Mechanically clean but fired on only 2/25 runs — >16k observations are rare here |
+| **Whale-capping @4k chars** (dose-response) | ❌ rejected | Fully engaged (19/25 runs, 1,882 caps), zero cache damage, quality held — and still **1.59×**: the capped tokens were 0.1×-rate cache reads. There was nothing to save |
+| **Epoch clearing** (batched, threshold-gated clearing — the cache-correct version of context editing) | ❌ rejected | **1.99×** and the campaign's worst quality point-estimate: both runs where it fired flailed (2.5× turns, one lost a solve the baseline had). Cleared observations were still needed |
+
+### Attacking turn count — one dead end so far: *simple stop rules can't tell doomed from slow*
+
+| technique | verdict | why |
+|---|---|---|
+| **Simple early termination** (abort long or edit-less runs) | ⚪ screened out, $0 spent | Mining our 103-run corpus: runs past 40 turns resolve at ≥ the base rate — an abort rule would kill ~4 of 28 solves for ~8% savings. Killed by data before spending its budget |
+
+### Attacking output tokens — the live frontier
+
+| technique | verdict | why |
+|---|---|---|
+| **Output tuning** (efficiency repo-instructions + thinking-budget cap) | 🔄 in evaluation | First arm aimed at a full-price term. Interim (n=6 paired): output tokens **0.56×**, cost **0.67×**, cheaper on *every* instance — the first uniform improvement of the campaign. Quality bar pending full n=25 |
 
 ## Upcoming experiments
 
-From the ranked pipeline
-([bench/docs/TOKEN_REDUCTION_CANDIDATES.md](bench/docs/TOKEN_REDUCTION_CANDIDATES.md),
-v3 — all aimed at the binding terms, all cache-safe by construction):
+All from the ranked pipeline
+([bench/docs/TOKEN_REDUCTION_CANDIDATES.md](bench/docs/TOKEN_REDUCTION_CANDIDATES.md)),
+all aimed at the binding terms, all cache-safe by construction:
 
 | candidate | lever | published claim to test |
 |---|---|---|
-| Diagnostic front-loading (SHERLOC-style) | turns | −23% tokens **and** +6pp resolve |
-| Course-correction feedback (SWE-PRM-style) | turns | +10.6pp resolve, shorter trajectories |
-| Edit-retry-loop elimination (SWE-Edit ingredients) | turns | +2.1pp resolve, −17.9% cost |
-| Batched recon tool-calls on SWE | turns | unmeasured in the literature — our rig can produce the number |
-| Rich-feature early termination | turns | only if features beat the F6 screen |
+| Diagnostic front-loading (SHERLOC-style) | turns | −23% tokens **and** +6pp resolve — agents burn ~half their budget locating the fault |
+| Course-correction feedback (SWE-PRM-style) | turns | +10.6pp resolve with shorter trajectories |
+| Edit-retry-loop elimination (SWE-Edit ingredients) | turns | +2.1pp resolve, −17.9% cost — half of SWE trajectories contain failed-edit retry loops |
+| Batched recon tool-calls | turns | unmeasured on SWE in the literature — our rig can produce the number |
+| Rich-feature early termination | turns | only if features beat the simple-rule screen above |
 
-All results to date are **directional** (n=25, small solve-denominators); any
-technique that passes gets a powered confirmation before being declared shipped.
+## What the literature says
+
+**Corroborating our findings** (all verified against arXiv):
+- [arXiv:2607.12161](https://arxiv.org/abs/2607.12161) *Token Reduction Is Not
+  Cost Reduction* — the independent replication: removing 38% of tool-output
+  tokens *increased* billed cost 6.8%; compression corrupted edit anchors.
+- [arXiv:2601.06007](https://arxiv.org/abs/2601.06007) *Don't Break the
+  Cache* — caching alone cuts agent cost 41–80%; stable-prefix /
+  dynamic-suffix discipline dominates.
+- [arXiv:2606.17016](https://arxiv.org/abs/2606.17016) (TokenPilot) and
+  [arXiv:2606.11213](https://arxiv.org/abs/2606.11213) (CWL) — independently
+  name the failure we measured: the "perpetual cache-write regime" where
+  context edits invalidate the prefix faster than reads amortize it.
+- Pricing convergence: OpenAI's GPT-5.6+ adopted Anthropic's exact
+  write-charged strict-prefix cache model; no API provider exposes non-prefix
+  KV reuse. The constraint is industry-wide and durable.
+
+**Claims our upcoming experiments exist to test**:
+[arXiv:2601.20404](https://arxiv.org/abs/2601.20404) (repo-instruction output
+savings), [arXiv:2606.24820](https://arxiv.org/abs/2606.24820) (SHERLOC),
+[arXiv:2509.02360](https://arxiv.org/abs/2509.02360) (SWE-PRM),
+[arXiv:2604.26102](https://arxiv.org/abs/2604.26102) (SWE-Edit),
+[arXiv:2601.05777](https://arxiv.org/abs/2601.05777) (EET early termination).
+
+**A caution we keep repeating**: most published "token savings" numbers are
+cache-blind. Under cache-tier pricing, a 50–96% token-reduction claim can be
+a cost *increase*. Re-derive before believing.
 
 ## The legacy plugin
 
 Quartermaster began as a least-privilege tool-governance / enforced-delegation
 plugin for Claude Code. That mechanism is **retired as a cost technique**
-(ledger row 0) but the code remains in this repo and still works for its
-governance value — see [docs/legacy-plugin.md](docs/legacy-plugin.md) for the
-architecture, install, and caveats.
+(ledger row 0), but the code remains in this repo and still works for its
+governance value — architecture, install, and caveats in
+[docs/legacy-plugin.md](docs/legacy-plugin.md).
 
 ## Contributing
 
-See [AGENTS.md](AGENTS.md) — the mission rule ("no cost claim the bench hasn't
-earned"), development gates (`make verify`), and repo invariants.
+See [AGENTS.md](AGENTS.md): the mission rule (*no cost claim the bench hasn't
+earned*), development gates (`make verify`), and repo invariants.
