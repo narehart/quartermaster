@@ -18,11 +18,14 @@ pre-commit:
       glob: "*"
       run: gitleaks protect --staged --no-banner --redact
     lint:
+      # --force-exclude makes ruff honor pyproject's extend-exclude (bench/)
+      # even for the explicit staged paths passed here, keeping this hook
+      # consistent with `make verify`'s `ruff check .` (which excludes bench).
       glob: "*.py"
-      run: ruff check {staged_files}
+      run: ruff check --force-exclude {staged_files}
     format:
       glob: "*.py"
-      run: ruff format --check {staged_files}
+      run: ruff format --check --force-exclude {staged_files}
     shell:
       glob: "*.sh"
       run: shfmt -d -i 2 {staged_files}

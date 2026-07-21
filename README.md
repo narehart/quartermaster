@@ -1,6 +1,59 @@
 # Quartermaster
 
-**Least-privilege tool governance and enforced delegation for Claude Code, with cost-tiered sub-agents and MCP tool tiering.**
+**A discipline for reducing token cost on long-horizon agentic
+software-engineering work — without sacrificing quality. A technique ships only
+when a preregistered benchmark proves it clears that bar.**
+
+## Mission
+
+Quartermaster's goal is to cut the token cost of long-running Claude Code
+sessions on real daily development work, holding task success constant. It is
+governed by one rule: **the plugin contains only techniques that the benchmark
+in [`bench/`](bench/) shows reduce cost without hurting quality.** Nothing is
+grandfathered — including the plugin's own original mechanism.
+
+## Status — honest and evidence-based
+
+- **The bench is live and has completed its first campaign.** [`bench/`](bench/)
+  is a preregistered **SWE-bench Live** cost-per-solved harness with exact
+  model pins and cache-aware token accounting. See
+  [bench/README.md](bench/README.md).
+- **Campaign result (5 techniques, n=25 each, directional): none cleared the
+  bar — and the arithmetic explains why.** On a prompt-cached, API-priced
+  coding agent, **context-size reduction does not reduce cost-per-solved**:
+  cache reads are 0.1×, so caching has already collapsed the context term.
+  What binds is **turn count** (each turn re-reads everything and emits
+  full-price output) and **output tokens** (never discounted). Every context
+  technique tested either removed already-cheap tokens (at-source capping:
+  no effect at any threshold), paid a cache-invalidation tax (sliding-window
+  masking: ~28× blowup), or destabilized the agent into extra turns (batched
+  clearing: 2.5× turns on treated runs, one lost solve). Model-swap (prewalk)
+  fails separately via executor turn-inflation.
+  [Full analysis + anomaly log.](bench/docs/SWEBENCH_LIVE_ANALYSIS.md)
+  - Independently replicated at 40× scale within days:
+    ["Token Reduction Is Not Cost Reduction" (arXiv:2607.12161)](https://arxiv.org/abs/2607.12161)
+    — cache traffic ≈87% of billed cost; token-reduction↔cost r=0.15.
+  - The cache-blind literature's 50–96% "savings" claims do not survive
+    cache-priced, quality-gated measurement. This bench's curation rule —
+    only ship what provably cuts cost without hurting resolve rate — is the
+    project's product.
+- **No token-reduction technique is confirmed-shipped yet.** The original
+  mechanism — least-privilege **tool governance + enforced delegation**
+  (documented below) — is measured **cost-neutral-to-worse** and remains for
+  its *governance* value. [The A/B result.](docs/benchmarks/2026-07-cost-ab.md)
+- **Next (round 3):** attack the binding terms directly — output-token
+  reduction (repo-instruction + thinking-budget tuning) and experience-driven
+  early termination — all cache-safe by construction.
+  [Candidate pipeline.](bench/docs/TOKEN_REDUCTION_CANDIDATES.md)
+
+---
+
+## The current mechanism: least-privilege tool governance + delegation
+
+This is Quartermaster's original mechanism. It provides real least-privilege
+governance, but — per the Status above — it is **not** a proven cost reduction;
+it is documented here as the shipped governance behavior, pending
+bench-validated cost techniques.
 
 A tool-restricted orchestrator runs your main session: it reads and searches
 the codebase to plan and review, invokes skills, and tracks tasks — but it

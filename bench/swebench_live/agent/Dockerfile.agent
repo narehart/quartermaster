@@ -1,0 +1,14 @@
+# Sandbox image for running Claude Code against a SWE-bench Live task's
+# repository. Non-root `node` user (matches upstream node:20-bookworm-slim's
+# built-in user) -- `claude --dangerously-skip-permissions` is REQUIRED for
+# unattended headless runs and is refused as root by Claude Code itself, so
+# running as root here is not a shortcut, it's a hard blocker. Proven
+# end-to-end in the swebench-spike (octodns__octodns-1298: image pulled,
+# agent produced a diff, tokens captured from modelUsage, Live scored it).
+FROM node:20-bookworm-slim
+RUN npm install -g @anthropic-ai/claude-code
+RUN apt-get update && apt-get install -y --no-install-recommends git python3 python3-pip python3-venv build-essential sudo && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /workspace /meta && chown -R node:node /workspace /meta /home/node
+WORKDIR /workspace
+USER node
+ENV HOME=/home/node

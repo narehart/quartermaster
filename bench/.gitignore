@@ -1,0 +1,26 @@
+# Heavy per-run outputs (Docker eval dirs, patches, transcripts) — regenerable
+jobs_*/
+results/**/eval/
+work/
+# Local venv + caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+# Run logs and HuggingFace dataset cache
+*.log
+.dataset_cache/
+hf_cache/
+# Keep the committed record + fixed subset (negated so the *.log / dir rules
+# above never accidentally catch them)
+!results/swebench_live_baseline_results.csv
+!swebench_live/swebench_live_subset.json
+
+# external eval code clone (setup step, not vendored)
+vendor/
+swebench_live/vendor/
+
+# HF dataset cache (regenerable)
+*_dataset_cache.jsonl
+full_dataset_cache.jsonl
