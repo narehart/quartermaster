@@ -86,7 +86,8 @@ turn re-reads the whole context and emits full-price output.
 
 | technique | verdict | why |
 |---|---|---|
-| **Output tuning** (efficiency repo-instructions + thinking-budget cap) | 🔄 in evaluation | First arm aimed at a full-price term. Interim (n=6 paired): output tokens **0.56×**, cost **0.67×**, cheaper on *every* instance — the first uniform improvement of the campaign. Quality bar pending full n=25 |
+| **Output tuning** (efficiency repo-instructions + thinking-budget cap) | ✅ **directional pass** — the campaign's first | Output tokens **0.53×**, median turns **0.56×**, total cost **0.57×**, cheaper on **24/25 instances**; cost/solved ratio 0.76 [0.56, 1.33]. Quality bar passes: the 2 lost solves are the same marginal pair every re-run arm loses (re-run band 5–7 vs the baseline's lucky 8). Powered confirmation required before "shipped" status |
+| **roust-only retrieval** ([narehart/roust](https://github.com/narehart/roust): one ranked, token-budgeted bundle per query instead of iterative grep; grep-family hard-denied by hook) | 🔄 in evaluation | Turn-reduction hypothesis; enforcement + instructions validated E2E (agent pivots grep→roust and recovers buried content). n=25 running |
 
 ## Upcoming experiments
 
