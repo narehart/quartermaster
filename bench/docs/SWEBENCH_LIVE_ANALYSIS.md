@@ -299,6 +299,21 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F6 — Simple early-termination rules screened out by corpus mining (no spend)
+
+Mined all 103 healthy opus-scaffold runs (baseline + rounds 1–2) for
+EET-style stop-rule features before building the round-3 early-termination
+arm. Result: **no simple feature discriminates doomed from slow-but-solvable
+runs on this distribution.**
+- turns>40 → 29% resolve (≥ the 27% base rate); turns>50 → 1/7 (n too small)
+- "no first edit by turn N" → 22–26% resolve for all N in {15,20,25,30} ≈ base
+- an abort@40 policy would kill ~4 of 28 total solves to save ~8% of spend —
+  a guaranteed quality-bar failure.
+EET's published −32%/−0.2pp (arXiv:2601.05777) evidently requires richer
+experience features than turn/edit-timing. The simple-rule arm was screened
+out WITHOUT spending its ~$20 budget. Revisit only with a materially richer
+feature set (e.g. error-loop/repeat-command signatures).
+
 ### A4 — Capping-experiment parity criterion (c) fired as-written; judged mis-specified
 
 PREREG_CAPPING.md kill-criterion (c) said: parity arm within 10% of paired
