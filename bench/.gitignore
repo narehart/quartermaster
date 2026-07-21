@@ -24,3 +24,4 @@ swebench_live/vendor/
 # HF dataset cache (regenerable)
 *_dataset_cache.jsonl
 full_dataset_cache.jsonl
+swebench_live/swebench_live_*_results.csv
