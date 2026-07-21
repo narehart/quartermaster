@@ -299,6 +299,38 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F7 — Output tuning: the campaign's FIRST DIRECTIONAL PASS (n=25)
+
+Arm: opus-tuned (fixed efficiency CLAUDE.md + MAX_THINKING_TOKENS=8000),
+25/25 healthy, $10.79 total. Against the paired opus-solo baseline:
+
+| metric | tuned | baseline | ratio |
+|---|---|---|---|
+| output tokens | 115,186 | 218,479 | **0.53** (mechanism gate: PASS, decisively) |
+| total cost | $10.79 | $18.80 | **0.57** — cheaper on **24/25 instances** |
+| median turns | 10 | 18 | **0.56** (unexpected bonus: "read the minimum" also cut exploration turns) |
+| cost/solved | $1.80 | $2.35 | ratio median **0.76**, CI [0.56, 1.33] |
+| resolved | 6/25 | 8/25 | diff CI [−20%, 0%] → quality bar PASS (marginal) |
+| cc/cr | 0.060 | ~0.05 | cache unaffected |
+
+**Quality read:** the 2 lost solves are openai-1601 and SDV-2658 — the SAME
+marginal pair every re-run arm loses (prewalk-haiku lost both; epoch lost
+SDV-2658). No re-run arm has ever matched the baseline's 8 (re-run band:
+5–7 across five arms). The drop is consistent with A4 re-run variance —
+the original baseline drew lucky on two coin-flip instances — not with
+technique damage. The formal prereg bar passes.
+
+**Why this one worked when everything else failed:** it attacks the two
+FULL-PRICE terms simultaneously — output tokens (0.53×, never
+cache-discounted) and turns (0.56×, the re-read multiplier) — instead of
+the cache-collapsed context term. Near-uniform per-instance improvement
+(24/25) distinguishes it from every noise-dominated context arm.
+
+**Verdict: DIRECTIONAL PASS — first of the campaign.** Cost/solved CI still
+includes 1 (quality denominator noise), so per the prereg discipline this
+does NOT confer "shipped" status: a powered confirmation (larger n, ideally
+multi-rep to pin the flaky-instance variance) is the required next step.
+
 ### F6 — Simple early-termination rules screened out by corpus mining (no spend)
 
 Mined all 103 healthy opus-scaffold runs (baseline + rounds 1–2) for

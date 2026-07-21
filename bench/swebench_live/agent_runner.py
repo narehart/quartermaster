@@ -325,6 +325,7 @@ def run_opus_solo(
     base_url: str | None = None,
     arm_label: str = "opus-solo",
     extra_env: dict[str, str] | None = None,
+    pre_cmd: str | None = None,
 ) -> dict[str, Any]:
     """Single-process agent run. When `base_url` is set (the masking arm),
     the container is pointed at the host masking proxy via ANTHROPIC_BASE_URL
@@ -353,6 +354,8 @@ def run_opus_solo(
         ]
     )
     full_cmd = f"{inner_cmd} > /meta/agent_run.jsonl 2> /meta/agent_run.stderr.log"
+    if pre_cmd:
+        full_cmd = f"{pre_cmd} && {full_cmd}"
 
     env_lines = dict(extra_env or {})
     if base_url:
@@ -431,6 +434,111 @@ EFFICIENCY_CLAUDE_MD = """\
 - Do not re-read files you have already seen unless they changed.
 - When done, stop immediately. Do not write a closing summary.
 """
+
+
+# Round-3 Arm B (PREREG_ROUST.md): roust-only code retrieval. The agent must
+# use the roust binary for content search; the Grep tool and grep-family Bash
+# commands are DENIED by a PreToolUse hook (instruction-only routing measures
+# ~60% compliance — context-mode's own data — so we enforce). Instructions
+# follow roust's README-recommended CLAUDE.md block, adapted for the hard
+# block (the README's "fall back to grep" line is inapplicable here).
+ROUST_IMAGE = "qm-swebench-agent-roust:latest"
+
+ROUST_CLAUDE_MD = """\
+# Code search in this repository
+
+grep/rg and the Grep tool are DISABLED in this environment. Use `roust` for
+all content search — it returns one ranked, token-budgeted bundle of the
+relevant code per query:
+
+- `roust "<question or issue text>" --files-only` to localize which files
+  are relevant.
+- `roust "<question or issue text>"` to get a packed bundle of the actual
+  relevant code, ready to read.
+
+Pass the raw question or issue text as the query — don't summarize or clean
+it up first. Include error messages, stack traces, file paths, and
+backtick-quoted symbol/function names verbatim; roust uses those as
+high-precision anchors. Reading specific files you already know about
+(Read tool, file paths) is fine; discovering code goes through roust.
+"""
+
+_DENY_GREP_HOOK = """\
+import json
+import re
+import sys
+
+d = json.load(sys.stdin)
+tool = d.get("tool_name", "")
+cmd = (d.get("tool_input") or {}).get("command", "")
+deny = tool == "Grep" or (
+    tool == "Bash" and re.search(r"(^|[|;&\\s(])(grep|egrep|fgrep|rg|ag|ack)\\b", cmd)
+)
+if deny:
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": (
+                        "grep-family search is disabled in this environment. "
+                        'Use roust instead: roust "<question or issue text>" '
+                        "[--files-only]  (see CLAUDE.md)"
+                    ),
+                }
+            }
+        )
+    )
+"""
+
+_ROUST_SETTINGS = {
+    "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Bash|Grep",
+                "hooks": [{"type": "command", "command": "python3 /meta/deny_grep.py"}],
+            }
+        ]
+    }
+}
+
+
+def run_opus_roust(
+    instance: dict[str, Any],
+    repo_path: Path,
+    meta_dir: Path,
+    api_key: str,
+    model: str = "claude-opus-4-8",
+    max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
+    image: str = ROUST_IMAGE,
+    timeout_s: int = DOCKER_RUN_TIMEOUT_S,
+) -> dict[str, Any]:
+    """opus-solo scaffold + roust-only retrieval: roust binary in the image,
+    usage instructions via untracked CLAUDE.md, grep-family denied by a
+    PreToolUse hook (settings.json written before launch)."""
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    (repo_path / "CLAUDE.md").write_text(ROUST_CLAUDE_MD)
+    (meta_dir / "deny_grep.py").write_text(_DENY_GREP_HOOK)
+    settings_json = json.dumps(_ROUST_SETTINGS)
+    pre_cmd = (
+        "mkdir -p $HOME/.claude && "
+        f"echo {shlex.quote(settings_json)} > $HOME/.claude/settings.json"
+    )
+    result = run_opus_solo(
+        instance,
+        repo_path,
+        meta_dir,
+        api_key,
+        model=model,
+        max_budget_usd=max_budget_usd,
+        image=image,
+        timeout_s=timeout_s,
+        arm_label="opus-roust",
+        pre_cmd=pre_cmd,
+    )
+    result["roust"] = {"image": image, "grep_denied": True}
+    return result
 
 
 def run_opus_tuned(

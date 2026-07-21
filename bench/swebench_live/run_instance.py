@@ -146,6 +146,7 @@ def main() -> None:
             "opus-masked",
             "opus-passthru",
             "opus-tuned",
+            "opus-roust",
             "gold",
         ],
     )
@@ -213,6 +214,16 @@ def main() -> None:
                 max_budget_usd=args.max_budget_usd,
             )
             patch = agent_runner.extract_patch(repo_path)
+        elif arm == "opus-roust":
+            run_result = agent_runner.run_opus_roust(
+                instance,
+                repo_path,
+                meta_dir,
+                api_key=os.environ["ANTHROPIC_API_KEY"],
+                model=PLANNER_MODEL,
+                max_budget_usd=args.max_budget_usd,
+            )
+            patch = agent_runner.extract_patch(repo_path)
         elif arm == "opus-tuned":
             run_result = agent_runner.run_opus_tuned(
                 instance,
@@ -267,7 +278,7 @@ def main() -> None:
                 f"cost_usd={log_metrics.get('true_cost_usd')} "
                 f"models={log_metrics.get('distinct_models')}"
             )
-            if arm in ("opus-solo", "opus-tuned") or arm in MASKED_ARMS:
+            if arm in ("opus-solo", "opus-tuned", "opus-roust") or arm in MASKED_ARMS:
                 expected = [PLANNER_MODEL]
             elif arm in PREWALK_ARMS:
                 expected = [PLANNER_MODEL, PREWALK_ARMS[arm]]
