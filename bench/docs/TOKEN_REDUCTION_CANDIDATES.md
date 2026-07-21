@@ -46,6 +46,23 @@
 6. **Batched recon tool-calls on SWE:** literature gap — nobody has the
    number; our rig could produce it.
 
+### Future arms (user-requested, not yet scheduled)
+
+- **context-mode plugin as a live arm** (mksglu/context-mode): we dissected
+  it (v2 memo) but never ran it — a bench arm would be the first honest
+  cost-per-solved measurement of it anywhere. Implementation note from
+  source: its headless passthrough gates on the LAUNCHER setting
+  `CLAUDE_CODE_HEADLESS=1` (hooks/formatters/claude-code.mjs) — our harness
+  does NOT set it, so routing/denials stay fully ACTIVE in our headless
+  runs. Two-sided risk to measure: deny-and-retry turn tax, and its own
+  documented headless-brick failure mode (denies with no TTY path forward).
+- **LSP-based navigation arm** (per karanbansal.in/blog/claude-code-lsp):
+  language-server go-to-definition/references instead of text search — a
+  turns-lever sibling of the roust arm. Subset is all-Python, so one
+  language server (pylsp/pyright) covers it. Design when scheduled: compare
+  against BOTH opus-solo and opus-roust to separate "structured retrieval"
+  from "any retrieval upgrade".
+
 ### Fleet-level lever (fixed-cost, not per-task; provider-documented)
 
 Anthropic caches are workspace-scoped with free refresh-on-hit and documented
