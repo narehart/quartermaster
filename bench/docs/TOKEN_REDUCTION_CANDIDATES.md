@@ -1,5 +1,66 @@
 # Token-reduction candidates for Quartermaster (research memo)
 
+## v3 synthesis (2026-07-21) — after the full campaign (F1–F5) + 3-scout cache-native sweep
+
+### The field confirms the campaign conclusion
+
+- **"Token Reduction Is Not Cost Reduction" (arXiv:2607.12161, Jul 13 2026,
+  verified):** 2,848 Claude Code runs, billing-level. Cache traffic ≈ 87% of
+  cost; token-reduction↔cost r=0.15; removing 38% of tool-output tokens
+  INCREASED cost +6.8%; compression corrupted edit anchors (27/40→15/40
+  patch application). Independently replicates F2/F4/F5 at 40× our scale.
+  Lead citation for the campaign writeup. (They lack: preregistration,
+  quality-gated cost-per-solved, model-swap findings, the break-even policy.)
+- **Pricing is converging on the constraint:** OpenAI GPT-5.6+ now charges
+  cache writes at 1.25× (was free), strict-prefix, 30m TTL — the Anthropic
+  shape is becoming the industry standard. Non-prefix KV reuse is
+  production-real ONLY self-hosted (LMCache/CacheBlend, RedKnot/SGLang,
+  MiniPIC/vLLM); no API provider exposes it. Killed techniques stay killed
+  at the API layer; falling read prices make turns/output MORE dominant.
+- **Still-unoccupied ground:** no published work derives stop/clear/swap
+  policies from a tiered cache cost model, and nobody attacks output tokens
+  + turns with cache pricing in the objective. Our formula + campaign data
+  remain publishable.
+
+### Round-3 slate (turns + output tokens — the binding terms), ranked
+
+1. **EET-style experience-driven early termination** (arXiv:2601.05777,
+   verified): −21% API calls, −25% output tokens, −32% avg cost, ≤0.2pp
+   resolve loss on SWE-bench Verified. Pure stop-decision — append-nothing,
+   cache-perfect. Implementable as a monitor over the stream; our 125+
+   scored trajectories are the experience corpus it needs.
+2. **AGENTS.md + thinking-budget tuning** (arXiv:2601.20404: −16.6% output
+   tokens, −28.6% runtime, completion preserved; 2512.10398: 32k→8k thinking
+   ≈ −1.4pp resolve): near-zero implementation cost, pure output-token
+   lever. The cheapest arm we could ever run.
+3. **Diagnostic front-loading (SHERLOC-style, arXiv:2606.24820):** −23.1%
+   total tokens AND +5.95pp resolve — kills the fault-localization half of
+   the trajectory. Append-only pre-phase; a cheap model can draft the
+   diagnosis.
+4. **Course-correction feedback (SWE-PRM, arXiv:2509.02360):** +10.6pp
+   resolve, shorter trajectories, ~$0.2/instance. Append-only hook.
+5. **Edit-retry-loop elimination (SWE-Edit ingredients, arXiv:2604.26102):**
+   +2.1pp AND −17.9% cost — adopt the format-fallback/lint-feedback
+   ingredients, NOT the sub-agent delegation (F1 says delegation inflates
+   turns).
+6. **Batched recon tool-calls on SWE:** literature gap — nobody has the
+   number; our rig could produce it.
+
+### Fleet-level lever (fixed-cost, not per-task; provider-documented)
+
+Anthropic caches are workspace-scoped with free refresh-on-hit and documented
+`max_tokens=0` pre-warming. Scheduling bench runs back-to-back within TTL
+amortizes the Claude Code system-prompt write across the whole fleet. Worth
+doing for the bench itself; not a per-task technique.
+
+### Cache-native context work (for completeness; low priority given F4/F5)
+
+Self-GC (2607.00692: cache-aware commit boundaries + recoverable sidecars —
+the correct-by-construction epoch design; production 10–15% input reduction),
+CAPC (2607.15516: first published two-tier cache cost model; LongBench-only,
+unlikely to survive our re-read-dominated workload), Governance Decay
+(2606.22528: compaction erases safety constraints 0%→30% — generalizes F5).
+
 ## v2 synthesis (2026-07-20) — after the F2 cache-hostility finding
 
 A second sweep (native Anthropic context management, the context-mode plugin
