@@ -10,12 +10,19 @@ software-engineering tasks without compromising quality.** The governing rule:
 the plugin ships only techniques a preregistered benchmark ([`bench/`](bench/),
 SWE-bench Live, cost-per-solved, cache-aware) shows clear that bar — nothing is
 grandfathered. Current status: **no token-reduction technique is
-confirmed-shipped yet.** The original tool-governance mechanism (below) is
-measured cost-neutral-to-worse and remains for governance value only; `prewalk`
-(model-swap) was tested on the bench and does **not** clear the bar on
-real-repo work (see `bench/docs/SWEBENCH_LIVE_ANALYSIS.md`). The candidate
-pipeline is `bench/docs/TOKEN_REDUCTION_CANDIDATES.md`. Do not write a
-cost-reduction claim anywhere in this repo that the bench has not earned.
+confirmed-shipped yet.** The first campaign (5 techniques, n=25 each) found
+NONE clear the bar, and established the governing arithmetic: on a
+prompt-cached API agent, cache reads at 0.1× collapse the context term, so
+**context-size reduction does not reduce cost-per-solved** (independently
+replicated by arXiv:2607.12161); the binding cost terms are **turn count and
+output tokens**. The original tool-governance mechanism (below) is measured
+cost-neutral-to-worse and remains for governance value only; `prewalk`
+(model-swap) fails via executor turn-inflation. See
+`bench/docs/SWEBENCH_LIVE_ANALYSIS.md` (findings F1–F5 + campaign conclusion)
+and `bench/docs/TOKEN_REDUCTION_CANDIDATES.md` (v3 pipeline, round-3 slate).
+Do not write a cost-reduction claim anywhere in this repo that the bench has
+not earned — and treat any cache-blind token-count claim (ours or the
+literature's) as unpriced until re-derived under cache tiers.
 
 ## Overview
 

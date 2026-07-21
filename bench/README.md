@@ -78,29 +78,30 @@ nohup ./run_baseline_experiment.sh 5 5 15 80 >> swebench_live_baseline.log 2>&1 
 .venv/bin/python3 analyze_baseline.py              # cost-per-solved + quality bar
 ```
 
-## Current result (directional, n=25, underpowered)
+## Campaign 1 result (5 techniques, n=25 each, directional)
 
-First campaign tested the incumbent cost technique, **prewalk** (run Opus until
-the first edit, then swap to a cheaper executor via session resume):
+| technique | class | cost/solved vs opus-solo | quality | mechanism of failure |
+|---|---|---|---|---|
+| prewalk-sonnet | model swap | 1.35× [0.97,2.42] | ~flat | executor turn-inflation (19→25 median turns) |
+| prewalk-haiku | model swap | 0.86× [0.60,1.62] | −8% (lost 2 solves) | capability pays for the discount |
+| sliding-window masking | context, per-turn | ~28× (killed at smoke) | — | perpetual cache re-writes (cc/cr 0.39 vs 0.05) |
+| whale-capping @16k chars | context, at-source | inert (fired 2/25 runs) | preserved | >16k observations too rare |
+| whale-capping @4k chars | context, at-source | 1.59× [0.89,3.01] | preserved | capped tokens were 0.1× cache reads — nothing to save |
+| epoch clearing (50k trigger) | context, batched | 1.99× [1.16,4.98] | worst point est. | treated runs flailed: 2.5× turns, one lost solve |
 
-| arm | resolved | cost/solved | vs opus (paired) |
-|---|---|---|---|
-| opus-solo | 8/25 (32%) | $2.35 | baseline |
-| prewalk-sonnet | 7/25 (28%) | $3.25 | **1.35×** cost, −4% quality |
-| prewalk-haiku | 6/25 (24%) | $2.04 | **0.86×** cost, −8% quality |
+**Conclusion: on a prompt-cached, API-priced coding agent, context-size
+reduction does not reduce cost-per-solved.** Caching already collapsed the
+context term (reads at 0.1×); the binding terms are TURNS and OUTPUT tokens.
+Independently replicated at 40× scale by
+["Token Reduction Is Not Cost Reduction" (arXiv:2607.12161)](https://arxiv.org/abs/2607.12161).
+Full findings (F1–F5), anomaly log, and the clearing break-even derivation:
+`docs/SWEBENCH_LIVE_ANALYSIS.md`. All results directional (n=25, small
+solve-denominators, wide CIs); the negative directions are consistent and
+mechanism-backed.
 
-**Neither prewalk variant clears "cheaper without quality loss" on real-repo
-work.** Sonnet's modest per-token discount is erased by executor turn-inflation
-(25 vs 19 turns); Haiku's larger discount does cut total cost 35% but trades
-away 2 of Opus's 8 solves. Terminal-Bench's clean 40.9% prewalk saving does not
-generalize to large-context dev tasks. Full analysis + mechanism:
-`docs/SWEBENCH_LIVE_ANALYSIS.md`. This is directional (tiny solve-denominators,
-wide CIs) — a powered confirmation is required before any published claim.
+## Next — round 3
 
-## Next
-
-`docs/TOKEN_REDUCTION_CANDIDATES.md` ranks the techniques to test next. The
-literature's quality-neutral cost wins are **per-turn context reduction**
-(tail-only observation masking, trajectory pruning, cache-aware prompt
-ordering) — not model-swap — and this harness already captures the cache tokens
-needed to evaluate them honestly.
+`docs/TOKEN_REDUCTION_CANDIDATES.md` (v3) ranks the round-3 slate, aimed at
+the binding terms and cache-safe by construction: repo-instruction +
+thinking-budget tuning (output tokens), experience-driven early termination
+(turns AND output), diagnostic front-loading, course-correction feedback.
