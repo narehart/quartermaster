@@ -2,7 +2,7 @@
   "name": "quartermaster",
   "displayName": "Quartermaster",
   "description": "Least-privilege tool tiering and enforced delegation for Claude Code. A tool-restricted orchestrator that physically cannot implement (no Edit/Write/Bash) delegates all execution to cheap tiered sub-agents, and every tool — MCP and built-in — is automatically classified and issued to the tier that should hold it.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "author": {
     "name": "narehart"
   },
