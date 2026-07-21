@@ -87,7 +87,7 @@ turn re-reads the whole context and emits full-price output.
 | technique | verdict | why |
 |---|---|---|
 | **Output tuning** (efficiency repo-instructions + thinking-budget cap) | ✅ **directional pass** — the campaign's first | Output tokens **0.53×**, median turns **0.56×**, total cost **0.57×**, cheaper on **24/25 instances**; cost/solved ratio 0.76 [0.56, 1.33]. Quality bar passes: the 2 lost solves are the same marginal pair every re-run arm loses (re-run band 5–7 vs the baseline's lucky 8). Powered confirmation required before "shipped" status |
-| **roust-only retrieval** ([narehart/roust](https://github.com/narehart/roust): one ranked, token-budgeted bundle per query instead of iterative grep; grep-family hard-denied by hook) | 🔄 in evaluation | Turn-reduction hypothesis; enforcement + instructions validated E2E (agent pivots grep→roust and recovers buried content). n=25 running |
+| **roust-only retrieval** ([narehart/roust](https://github.com/narehart/roust): one ranked, token-budgeted bundle per query instead of iterative grep; grep-family hard-denied by hook) | ❌ rejected as configured | Fully adopted (median 3 calls/run) and quality held — but **1.37×** cost/solved, CI [1.14, 1.94]. Turns didn't drop (18 vs 18): the agent used roust *in addition to* normal reading, so each ~8k-token bundle added context mass with no offsetting turn reduction. Diagnostic: recall isn't the bottleneck here, turn conversion is |
 
 ## Upcoming experiments
 

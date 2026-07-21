@@ -299,6 +299,32 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F8 — roust-only retrieval: adopted but cost-negative (n=25)
+
+Arm: opus-roust (roust @52b2305 in-image, grep-family hard-denied by hook,
+README-recommended instructions). 25/25 healthy, $22.76 total.
+
+- **Adoption gates PASSED**: median 3 roust calls/run (only 3/25 runs with
+  zero), ~1 hook denial/run — instructions + enforcement worked; this is a
+  genuine test, not an inert arm.
+- **Quality PASSED**: 7/25 vs 8/25 (CI [−12%, 0%]), within the re-run band.
+- **Cost FAILED**: total 1.21×, cost/solved ratio median **1.37, CI
+  [1.14, 1.94]** — the first arm whose cost CI cleanly excludes 1 upward
+  under full engagement. cc/cr 0.052 (cache fine).
+- **Mechanism**: median turns 18 vs 18 — the recall→fewer-turns hypothesis
+  did not materialize. The agent used roust IN ADDITION to its normal
+  reading, not instead of it; each call adds an ~8k-token bundle (1.25×
+  cache-write once, 0.1× re-read thereafter) with no offsetting turn
+  reduction → +21% cost.
+
+**Verdict: ❌ rejected as configured.** Diagnostic for the tool itself:
+recall is not the bottleneck on this workload — TURN CONVERSION is. Claude
+Code's native navigation is already turn-efficient enough here that a
+recall-first bundle adds mass without removing steps. Plausible v2 variants
+(separate prereg if pursued): --files-only-first workflow (localization
+without bundle mass); instructions making roust REPLACE reading, not precede
+it; smaller bundles despite the recall tradeoff.
+
 ### F7 — Output tuning: the campaign's FIRST DIRECTIONAL PASS (n=25)
 
 Arm: opus-tuned (fixed efficiency CLAUDE.md + MAX_THINKING_TOKENS=8000),
