@@ -324,11 +324,13 @@ def run_opus_solo(
     timeout_s: int = DOCKER_RUN_TIMEOUT_S,
     base_url: str | None = None,
     arm_label: str = "opus-solo",
+    extra_env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Single-process agent run. When `base_url` is set (the masking arm),
     the container is pointed at the host masking proxy via ANTHROPIC_BASE_URL
     and reaches it through host.docker.internal; otherwise it talks to the API
-    directly (the plain opus-solo baseline)."""
+    directly (the plain opus-solo baseline). `extra_env` adds further env
+    vars to the sandbox (e.g. MAX_THINKING_TOKENS for the tuned arm)."""
     meta_dir.mkdir(parents=True, exist_ok=True)
     prompt = render_prompt(instance)
     log_path = meta_dir / "agent_run.jsonl"
@@ -352,7 +354,9 @@ def run_opus_solo(
     )
     full_cmd = f"{inner_cmd} > /meta/agent_run.jsonl 2> /meta/agent_run.stderr.log"
 
-    extra_env = {"ANTHROPIC_BASE_URL": base_url} if base_url else None
+    env_lines = dict(extra_env or {})
+    if base_url:
+        env_lines["ANTHROPIC_BASE_URL"] = base_url
     # host.docker.internal is automatic on Docker Desktop (macOS); the explicit
     # host-gateway mapping makes the proxy reachable on Linux too.
     host_args = ["--add-host", "host.docker.internal:host-gateway"] if base_url else []
@@ -361,7 +365,7 @@ def run_opus_solo(
     status = "ok"
     error_detail = None
     try:
-        with _api_key_env_file(api_key, extra_env) as env_file:
+        with _api_key_env_file(api_key, env_lines or None) as env_file:
             subprocess.run(
                 [
                     "docker",
@@ -405,6 +409,59 @@ def run_opus_solo(
         "executor_model": None,
         "swap_fired": False,
     }
+
+
+# Round-3 Arm A (PREREG_ROUND3.md): output-token tuning via repo instructions
+# + thinking-budget cap. The instruction text is a FIXED constant: identical
+# in every run and every request (it enters the context once at session start
+# via the auto-loaded /workspace/CLAUDE.md), so it is cache-stable. It is
+# written as an UNTRACKED file, and extract_patch uses `git diff` (tracked
+# only), so it can never leak into the evaluated patch.
+EFFICIENCY_CLAUDE_MD = """\
+# Working style for this repository
+
+- Be maximally concise. No preamble, no narration of what you are about to
+  do, no summaries of what you just did. Never restate file contents you
+  just read.
+- Read the MINIMUM needed: use grep/targeted searches first; read full files
+  only for the file you are about to edit. Batch independent
+  reads/greps/searches into a single message wherever possible.
+- Make the smallest change that fixes the root cause. Prefer surgical edits
+  over rewrites. Do not refactor, reformat, or improve unrelated code.
+- Do not re-read files you have already seen unless they changed.
+- When done, stop immediately. Do not write a closing summary.
+"""
+
+
+def run_opus_tuned(
+    instance: dict[str, Any],
+    repo_path: Path,
+    meta_dir: Path,
+    api_key: str,
+    model: str = "claude-opus-4-8",
+    max_thinking_tokens: int = 8000,
+    max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
+    image: str = AGENT_IMAGE,
+    timeout_s: int = DOCKER_RUN_TIMEOUT_S,
+) -> dict[str, Any]:
+    """opus-solo scaffold + output-token tuning: a fixed efficiency CLAUDE.md
+    dropped (untracked) into the task repo, plus MAX_THINKING_TOKENS capped
+    via the env-file. No proxy, no context mutation — pure output-side lever."""
+    (repo_path / "CLAUDE.md").write_text(EFFICIENCY_CLAUDE_MD)
+    result = run_opus_solo(
+        instance,
+        repo_path,
+        meta_dir,
+        api_key,
+        model=model,
+        max_budget_usd=max_budget_usd,
+        image=image,
+        timeout_s=timeout_s,
+        arm_label="opus-tuned",
+        extra_env={"MAX_THINKING_TOKENS": str(max_thinking_tokens)},
+    )
+    result["tuning"] = {"claude_md": True, "max_thinking_tokens": max_thinking_tokens}
+    return result
 
 
 def run_opus_masked(
