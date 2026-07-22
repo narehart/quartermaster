@@ -299,6 +299,23 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### A6 — Round 4 aborted mid-arm: monthly API usage cap (INDETERMINATE, not a verdict)
+
+At ~2026-07-22T13:30Z, mid-way through the opus-diag arm, the API org
+crossed its MONTHLY usage threshold — every subsequent request 429'd
+("access returns 2026-08-01 00:00 UTC"). 19 of 25 diag runs are zero-cost
+error artifacts (2-turn logs containing only the 429 result); they were
+QUARANTINED (jobs_round4/quarantine_429/) so the resume-safe driver re-runs
+them cleanly when access returns. The opus-lint arm never ran.
+
+**No verdict is recorded for either round-4 arm.** The naive analysis of the
+poisoned arm (8% resolve, median 2 turns) is an outage measurement, not a
+technique measurement — caught by per-run forensics before it entered the
+ledger. The 6 valid diag runs (wave 1) hint at the roust-like additive-
+overhead pattern (diag share 10–56% of run cost, no turn reduction), but
+n=6 is interim-only. Round 4 resumes 2026-08-01: re-invoke
+run_round4_experiment.sh (resume-safe; quarantined + unrun cells re-run).
+
 ### F10 — Delivery vehicle validated: hook injection ≡ repo CLAUDE.md (n=25)
 
 Per PREREG_VEHICLE.md (locked at aa329bb): opus-shipped — the certified text
