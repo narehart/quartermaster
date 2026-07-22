@@ -299,6 +299,28 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F10 — Delivery vehicle validated: hook injection ≡ repo CLAUDE.md (n=25)
+
+Per PREREG_VEHICLE.md (locked at aa329bb): opus-shipped — the certified text
+delivered exactly as the v0.9.0 plugin ships it (SessionStart-hook
+additionalContext + env cap, NO repo CLAUDE.md) — vs the powered campaign's
+pooled arms (75 control / 75 tuned runs, same subset, days old).
+
+| | shipped (n=25) | tuned (n=75) | control (n=75) |
+|---|---|---|---|
+| output tokens/run | 5,027 | 5,172 | 8,230 |
+| median turns | 11 | 11 | 16 |
+| cost/run | $0.477 | $0.496 | $0.759 |
+| resolve | 5/25 (20.0%) | 24.0% | 24.0% |
+
+- **Mechanism gate MET**: shipped output ratio vs control 0.61 (bar <0.8).
+- **Vehicle equivalence**: shipped/tuned output 0.97, cost/run 0.96,
+  identical median turns — indistinguishable.
+- **Quality bar MET**: pass diff CI [−13.3%, +2.7%] (20.0% point estimate is
+  single-rep denominator noise; within the per-rep band).
+- **Verdict (pre-committed): vehicle VALIDATED** — v0.9.0 as shipped
+  delivers the certified effect; the README delivery caveat is removed.
+
 ### F9 — Output tuning CONFIRMED at n=150: the campaign's first SHIPPED technique
 
 Powered confirmation per PREREG_POWERED_TUNED.md (locked at 5ec3366 before

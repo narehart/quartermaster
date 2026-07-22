@@ -55,9 +55,9 @@ text that was benchmarked; the text IS the technique) into every session via
 a SessionStart hook — zero per-project setup. `/quartermaster:tune` performs
 the one step a hook can't: writing the certified thinking-budget cap to your
 user-level settings. Undo: remove that env key and disable the plugin.
-Caveat noted for honesty: certification delivered the block via repo
-CLAUDE.md; the plugin delivers the identical text via hook injection — a
-cheap re-bench of the delivery vehicle is on the pipeline.
+The delivery vehicle itself is benchmarked: hook injection reproduces the
+certified effect (output ratio 0.97 vs the certified arm, identical turns —
+finding F10).
 
 ## How we measure
 
