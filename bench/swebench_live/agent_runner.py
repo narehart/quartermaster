@@ -441,6 +441,80 @@ EFFICIENCY_CLAUDE_MD = """\
 """
 
 
+# Vehicle re-bench (PREREG_VEHICLE.md): the SHIPPED delivery of the certified
+# output tuning — SessionStart-hook additionalContext injection (as the v0.9.0
+# plugin does) + MAX_THINKING_TOKENS env — with NO repo CLAUDE.md. Tests
+# whether the shipped vehicle reproduces the certified effect (which was
+# measured with the block delivered via repo CLAUDE.md).
+_VEHICLE_INJECT_PY = """\
+import json
+
+block = open("/meta/tuning_block.md").read()
+print(
+    json.dumps(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": block,
+            }
+        }
+    )
+)
+"""
+
+_VEHICLE_SETTINGS = {
+    "hooks": {
+        "SessionStart": [
+            {
+                "matcher": "",
+                "hooks": [{"type": "command", "command": "python3 /meta/inject_tuning.py"}],
+            }
+        ]
+    }
+}
+
+
+def run_opus_shipped(
+    instance: dict[str, Any],
+    repo_path: Path,
+    meta_dir: Path,
+    api_key: str,
+    model: str = "claude-opus-4-8",
+    max_thinking_tokens: int = 8000,
+    max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
+    image: str = AGENT_IMAGE,
+    timeout_s: int = DOCKER_RUN_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Certified output tuning delivered exactly as the v0.9.0 plugin ships
+    it: identical instruction text, injected via SessionStart-hook
+    additionalContext; thinking cap via env; NO repo CLAUDE.md."""
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    claude_md = repo_path / "CLAUDE.md"
+    claude_md.unlink(missing_ok=True)  # the point: no repo-file delivery
+    (meta_dir / "tuning_block.md").write_text(EFFICIENCY_CLAUDE_MD)
+    (meta_dir / "inject_tuning.py").write_text(_VEHICLE_INJECT_PY)
+    settings_json = json.dumps(_VEHICLE_SETTINGS)
+    pre_cmd = (
+        "mkdir -p $HOME/.claude && "
+        f"echo {shlex.quote(settings_json)} > $HOME/.claude/settings.json"
+    )
+    result = run_opus_solo(
+        instance,
+        repo_path,
+        meta_dir,
+        api_key,
+        model=model,
+        max_budget_usd=max_budget_usd,
+        image=image,
+        timeout_s=timeout_s,
+        arm_label="opus-shipped",
+        extra_env={"MAX_THINKING_TOKENS": str(max_thinking_tokens)},
+        pre_cmd=pre_cmd,
+    )
+    result["tuning"] = {"vehicle": "sessionstart-hook", "max_thinking_tokens": max_thinking_tokens}
+    return result
+
+
 # Round-3 Arm B (PREREG_ROUST.md): roust-only code retrieval. The agent must
 # use the roust binary for content search; the Grep tool and grep-family Bash
 # commands are DENIED by a PreToolUse hook (instruction-only routing measures
