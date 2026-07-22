@@ -232,7 +232,12 @@ def build_agent_image(tag: str = AGENT_IMAGE, dockerfile_dir: Path = AGENT_DIR) 
 
 
 def image_built(tag: str = AGENT_IMAGE) -> bool:
-    proc = subprocess.run(["docker", "image", "inspect", tag], capture_output=True, text=True)
+    # timeout guard: a wedged Docker daemon otherwise blocks this call forever
+    # (observed 2026-07-21: powered campaign hung ~3h on `docker image inspect`
+    # after Docker Desktop locked up mid-campaign).
+    proc = subprocess.run(
+        ["docker", "image", "inspect", tag], capture_output=True, text=True, timeout=60
+    )
     return proc.returncode == 0
 
 
@@ -305,7 +310,7 @@ def _docker_exec(
 
 
 def _docker_rm(name: str) -> None:
-    subprocess.run(["docker", "rm", "-f", name], capture_output=True, text=True)
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True, text=True, timeout=120)
 
 
 # ---------------------------------------------------------------------------
