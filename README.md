@@ -36,6 +36,29 @@ scale, within days, by
 (2,848 Claude Code runs — cache traffic ≈87% of billed cost;
 token-reduction↔cost correlation r=0.15).
 
+## Install the shipped technique
+
+The certified **output tuning** configuration (~34% cheaper per solved task,
+identical resolve rate — [certification](bench/docs/SWEBENCH_LIVE_ANALYSIS.md))
+ships as this plugin:
+
+```bash
+claude plugin marketplace add narehart/quartermaster
+claude plugin install quartermaster@quartermaster-marketplace
+# then, once, in any session:
+/quartermaster:tune     # sets MAX_THINKING_TOKENS=8000 in your user settings
+```
+
+Installing the plugin auto-injects the certified instruction block
+([tuned/EFFICIENCY-CLAUDE-MD.md](tuned/EFFICIENCY-CLAUDE-MD.md) — the exact
+text that was benchmarked; the text IS the technique) into every session via
+a SessionStart hook — zero per-project setup. `/quartermaster:tune` performs
+the one step a hook can't: writing the certified thinking-budget cap to your
+user-level settings. Undo: remove that env key and disable the plugin.
+Caveat noted for honesty: certification delivered the block via repo
+CLAUDE.md; the plugin delivers the identical text via hook injection — a
+cheap re-bench of the delivery vehicle is on the pipeline.
+
 ## How we measure
 
 [`bench/`](bench/) runs **SWE-bench Live** (fresh, contamination-resistant

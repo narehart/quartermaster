@@ -2,6 +2,28 @@
 
 All notable changes to Quartermaster. Versions follow [semver](https://semver.org).
 
+## [0.9.0] — 2026-07-22
+
+### Added — first certified technique shipped: output tuning
+- `tuned/EFFICIENCY-CLAUDE-MD.md`: the exact instruction block certified in
+  the powered experiment (bench/docs/PREREG_POWERED_TUNED.md, finding F9):
+  n=150 on SWE-bench Live, cost-per-solved ratio 0.66 (95% CI [0.55, 0.77]),
+  resolve rate identical (24.0% vs 24.0%). The text IS the technique — do
+  not edit without re-benching.
+- `tuned/inject-tuning.sh` + SessionStart hook: the certified block is
+  injected as additionalContext automatically in every session — installing
+  the plugin applies the technique with zero per-project setup.
+- `/quartermaster:tune` command: one-time USER-LEVEL write of the certified
+  companion setting `MAX_THINKING_TOKENS=8000` (a hook cannot set env vars);
+  the SessionStart hook nudges if the cap is unset.
+
+### Changed — legacy governance now opt-in
+- The legacy tool-tiering hooks (classify-mcp SessionStart, enforce-agent-model
+  PreToolUse, CLAUDE_CODE_SUBAGENT_MODEL warning) are now guarded on the
+  legacy install marker (`~/.claude/quartermaster/`, created by `install.sh`):
+  a plain plugin install gets ONLY the certified tuning; governance activates
+  only for users who ran the legacy installer.
+
 ## [0.8.0] — 2026-07-15
 
 ### Added — precision-brief delegation contract

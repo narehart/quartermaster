@@ -1,17 +1,17 @@
 {
   "name": "quartermaster",
   "displayName": "Quartermaster",
-  "description": "Least-privilege tool tiering and enforced delegation for Claude Code. A tool-restricted orchestrator that physically cannot implement (no Edit/Write/Bash) delegates all execution to cheap tiered sub-agents, and every tool — MCP and built-in — is automatically classified and issued to the tier that should hold it.",
-  "version": "0.8.0",
+  "description": "Evidence-gated token-cost reduction for Claude Code. Ships the certified output-tuning configuration (34% cheaper per solved task at identical resolve rate, n=150 on SWE-bench Live) automatically at session start; the legacy least-privilege tool-tiering/delegation system remains available via install.sh.",
+  "version": "0.9.0",
   "author": {
     "name": "narehart"
   },
   "keywords": [
-    "agents",
-    "delegation",
     "cost-control",
-    "orchestrator",
-    "subagents"
+    "token-efficiency",
+    "tuning",
+    "benchmark",
+    "agents"
   ],
   "license": "MIT",
   "defaultEnabled": true,
