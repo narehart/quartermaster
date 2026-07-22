@@ -331,6 +331,8 @@ def run_opus_solo(
     arm_label: str = "opus-solo",
     extra_env: dict[str, str] | None = None,
     pre_cmd: str | None = None,
+    prompt_suffix: str = "",
+    append_log: bool = False,
 ) -> dict[str, Any]:
     """Single-process agent run. When `base_url` is set (the masking arm),
     the container is pointed at the host masking proxy via ANTHROPIC_BASE_URL
@@ -338,7 +340,7 @@ def run_opus_solo(
     directly (the plain opus-solo baseline). `extra_env` adds further env
     vars to the sandbox (e.g. MAX_THINKING_TOKENS for the tuned arm)."""
     meta_dir.mkdir(parents=True, exist_ok=True)
-    prompt = render_prompt(instance)
+    prompt = render_prompt(instance) + prompt_suffix
     log_path = meta_dir / "agent_run.jsonl"
     err_path = meta_dir / "agent_run.stderr.log"
 
@@ -358,7 +360,8 @@ def run_opus_solo(
             prompt,
         ]
     )
-    full_cmd = f"{inner_cmd} > /meta/agent_run.jsonl 2> /meta/agent_run.stderr.log"
+    redirect = ">>" if append_log else ">"
+    full_cmd = f"{inner_cmd} {redirect} /meta/agent_run.jsonl 2{redirect} /meta/agent_run.stderr.log"
     if pre_cmd:
         full_cmd = f"{pre_cmd} && {full_cmd}"
 
@@ -439,6 +442,205 @@ EFFICIENCY_CLAUDE_MD = """\
 - Do not re-read files you have already seen unless they changed.
 - When done, stop immediately. Do not write a closing summary.
 """
+
+
+# Round-4 arms (PREREG_ROUND4.md): marginal value over the SHIPPED tuned
+# baseline. Both arms include the full tuned config (certified CLAUDE.md
+# block + MAX_THINKING_TOKENS=8000).
+DIAG_MODEL = "claude-sonnet-5"
+
+_DIAG_SUFFIX = """
+
+--- OVERRIDE FOR THIS RUN ONLY ---
+Do NOT edit any files and do NOT attempt a fix in this run. Instead, produce
+a structured DIAGNOSIS of the issue above, and nothing else:
+1. Likely root cause (1-3 sentences).
+2. Files/functions to inspect, ranked, with one line each on why.
+3. Recommended fix strategy (2-4 sentences; smallest viable change).
+4. Tests likely affected.
+Investigate the repository as needed (read/search), then output the
+diagnosis as your final message and stop."""
+
+
+def _last_result_text(log_path: Path) -> str:
+    """Extract the final assistant result text from a stream-json log."""
+    text = ""
+    try:
+        for line in log_path.read_text(errors="replace").splitlines():
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("type") == "result" and isinstance(ev.get("result"), str):
+                text = ev["result"]
+    except OSError:
+        pass
+    return text
+
+
+def run_opus_diag(
+    instance: dict[str, Any],
+    repo_path: Path,
+    meta_dir: Path,
+    api_key: str,
+    model: str = "claude-opus-4-8",
+    diag_model: str = DIAG_MODEL,
+    max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
+    image: str = AGENT_IMAGE,
+    timeout_s: int = DOCKER_RUN_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Tuned config + SHERLOC-style diagnostic front-loading: a pinned cheap
+    pre-phase produces a structured diagnosis, appended to the main run's
+    prompt. Both phases write the SAME stream log (the prewalk pattern) so
+    the arm's cost includes the diagnosis. Any edits the diag phase makes
+    despite instructions are wiped by a git reset before the main run."""
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    (repo_path / "CLAUDE.md").write_text(EFFICIENCY_CLAUDE_MD)
+
+    diag_result = run_opus_solo(
+        instance,
+        repo_path,
+        meta_dir,
+        api_key,
+        model=diag_model,
+        max_budget_usd=min(2.0, max_budget_usd),
+        image=image,
+        timeout_s=900,
+        arm_label="opus-diag/pre",
+        extra_env={"MAX_THINKING_TOKENS": "8000"},
+        prompt_suffix=_DIAG_SUFFIX,
+        append_log=False,
+    )
+    # wipe any diag-phase edits (tracked AND untracked except CLAUDE.md)
+    subprocess.run(["git", "checkout", "--", "."], cwd=repo_path, capture_output=True, timeout=120)
+    subprocess.run(
+        ["git", "clean", "-fd", "--exclude=CLAUDE.md"], cwd=repo_path, capture_output=True, timeout=120
+    )
+    (repo_path / "CLAUDE.md").write_text(EFFICIENCY_CLAUDE_MD)
+
+    diagnosis = _last_result_text(meta_dir / "agent_run.jsonl").strip()
+    suffix = (
+        "\n\n--- DIAGNOSIS (from a prior read-only analysis pass; verify before trusting) ---\n"
+        + (diagnosis or "(diagnosis pass produced no output)")
+    )
+    result = run_opus_solo(
+        instance,
+        repo_path,
+        meta_dir,
+        api_key,
+        model=model,
+        max_budget_usd=max_budget_usd,
+        image=image,
+        timeout_s=timeout_s,
+        arm_label="opus-diag",
+        extra_env={"MAX_THINKING_TOKENS": "8000"},
+        prompt_suffix=suffix,
+        append_log=True,
+    )
+    result["diag"] = {
+        "diag_model": diag_model,
+        "diag_status": diag_result.get("status"),
+        "diagnosis_chars": len(diagnosis),
+    }
+    return result
+
+
+_LINT_HOOK_PY = '''\
+import json
+import subprocess
+import sys
+
+d = json.load(sys.stdin)
+path = (d.get("tool_input") or {}).get("file_path", "")
+if not path.endswith(".py"):
+    sys.exit(0)
+out = ""
+try:
+    p = subprocess.run(
+        ["python3", "-m", "pyflakes", path], capture_output=True, text=True, timeout=30
+    )
+    out = (p.stdout or "") + (p.stderr or "")
+    if "No module named" in out:
+        raise FileNotFoundError
+except Exception:
+    try:
+        p = subprocess.run(
+            ["python3", "-m", "py_compile", path], capture_output=True, text=True, timeout=30
+        )
+        out = p.stderr or ""
+    except Exception:
+        out = ""
+out = out.strip()
+if out:
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": f"qm-lint {path}:\\n{out[:2000]}",
+                }
+            }
+        )
+    )
+'''
+
+_LINT_SETTINGS = {
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": "Edit|Write|MultiEdit",
+                "hooks": [{"type": "command", "command": "python3 /meta/lint_hook.py"}],
+            }
+        ]
+    }
+}
+
+
+def run_opus_lint(
+    instance: dict[str, Any],
+    repo_path: Path,
+    meta_dir: Path,
+    api_key: str,
+    model: str = "claude-opus-4-8",
+    max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
+    image: str = AGENT_IMAGE,
+    timeout_s: int = DOCKER_RUN_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Tuned config + immediate lint feedback after every Python edit
+    (PostToolUse hook; pyflakes if installable, stdlib py_compile fallback).
+    Attacks failed-edit retry loops. Append-only -> cache-safe."""
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    (repo_path / "CLAUDE.md").write_text(EFFICIENCY_CLAUDE_MD)
+    (meta_dir / "lint_hook.py").write_text(_LINT_HOOK_PY)
+    settings_json = json.dumps(_LINT_SETTINGS)
+    pre_cmd = (
+        "python3 -m pip install --quiet --user pyflakes 2>/dev/null || true; "
+        "mkdir -p $HOME/.claude && "
+        f"echo {shlex.quote(settings_json)} > $HOME/.claude/settings.json"
+    )
+    result = run_opus_solo(
+        instance,
+        repo_path,
+        meta_dir,
+        api_key,
+        model=model,
+        max_budget_usd=max_budget_usd,
+        image=image,
+        timeout_s=timeout_s,
+        arm_label="opus-lint",
+        extra_env={"MAX_THINKING_TOKENS": "8000"},
+        pre_cmd=pre_cmd,
+    )
+    # count lint feedback events for the mechanism gate
+    events = 0
+    try:
+        for line in (meta_dir / "agent_run.jsonl").read_text(errors="replace").splitlines():
+            if "qm-lint " in line:
+                events += 1
+    except OSError:
+        pass
+    result["lint"] = {"feedback_events": events}
+    return result
 
 
 # Vehicle re-bench (PREREG_VEHICLE.md): the SHIPPED delivery of the certified
