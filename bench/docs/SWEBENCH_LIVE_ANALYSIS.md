@@ -299,6 +299,46 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F9 — Output tuning CONFIRMED at n=150: the campaign's first SHIPPED technique
+
+Powered confirmation per PREREG_POWERED_TUNED.md (locked at 5ec3366 before
+data): 3 reps × 25 instances × {opus-tuned, FRESH opus-solo control} = 150
+runs, $92.69 main pass + $1.40 backfill of 7 Docker-wedge casualties (A5).
+Final dataset perfectly balanced: 75 valid runs per arm, 0 missing.
+
+| metric | tuned | control |
+|---|---|---|
+| resolved | 18/75 (24.0%) | 18/75 (24.0%) — IDENTICAL |
+| output tokens/run | 5,172 | 8,230 (ratio 0.63; mech gate <0.8 PASS) |
+| median turns | 11 | 16 |
+| cost/run | $0.496 | $0.759 |
+| cost/solved | $2.07 | $3.16 |
+| cc/cr median | 0.060 | — (cache clean) |
+
+**Certification (pre-committed rules):**
+- cost/solved ratio median **0.66**, 95% CI **[0.55, 0.77]** → CI upper < 1:
+  **cost bar MET**
+- pass-rate diff median +0.0%, 95% CI [−4.0%, +4.0%] → **quality bar MET**
+- **VERDICT: CONFIRMED — SHIPPED STATUS.** Output tuning (fixed efficiency
+  CLAUDE.md + MAX_THINKING_TOKENS=8000) cuts cost-per-solved ~34% at zero
+  measured quality cost on this distribution.
+
+Rep-to-rep stability: only 3/25 instances show mixed resolve outcomes across
+reps, symmetric across arms — F7's "lost 2 solves" is definitively attributed
+to the original baseline's lucky draw (fresh controls resolve 24.0%, exactly
+matching tuned).
+
+### A5 — Docker Desktop wedge mid-campaign (RESOLVED: restart + timeout guards)
+
+~3h stall during rep1/opus-tuned: Docker daemon locked up; the driver blocked
+forever on `docker image inspect` (no subprocess timeout). Detected via log
+staleness (175 min), not by the milestone monitor — hangs emit nothing to
+grep. Fixes: Docker restart resumed the campaign in seconds; timeout guards
+added to the un-timeouted docker calls (image inspect 60s, docker rm 120s);
+a log-staleness watchdog monitor (>45 min quiet → alert) now accompanies
+long campaigns. 7 runs errored during the degradation window and were
+backfilled cleanly post-campaign via the resume-safe driver.
+
 ### F8 — roust-only retrieval: adopted but cost-negative (n=25)
 
 Arm: opus-roust (roust @52b2305 in-image, grep-family hard-denied by hook,
