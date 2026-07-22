@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/enforce-agent-model.py",
-            "statusMessage": "quartermaster: enforcing cost-tier model pins"
+            "command": "if [ -d \"$HOME/.claude/quartermaster\" ]; then python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/enforce-agent-model.py; else cat >/dev/null; fi",
+            "statusMessage": "quartermaster: enforcing cost-tier model pins (legacy governance)"
           }
         ]
       }
@@ -18,13 +18,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -n \"${CLAUDE_CODE_SUBAGENT_MODEL:-}\" ]; then printf '{\"systemMessage\":\"⚠️ quartermaster: CLAUDE_CODE_SUBAGENT_MODEL=%s is set — it silently overrides ALL agent model pins\"}' \"$CLAUDE_CODE_SUBAGENT_MODEL\"; fi"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}\"/tuned/inject-tuning.sh",
+            "statusMessage": "quartermaster: applying certified output tuning"
           },
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/classify-mcp.py --templates \"${CLAUDE_PLUGIN_ROOT}\"/templates",
+            "command": "if [ -d \"$HOME/.claude/quartermaster\" ] && [ -n \"${CLAUDE_CODE_SUBAGENT_MODEL:-}\" ]; then printf '{\"systemMessage\":\"⚠️ quartermaster: CLAUDE_CODE_SUBAGENT_MODEL=%s is set — it silently overrides ALL agent model pins\"}' \"$CLAUDE_CODE_SUBAGENT_MODEL\"; fi"
+          },
+          {
+            "type": "command",
+            "command": "if [ -d \"$HOME/.claude/quartermaster\" ]; then python3 \"${CLAUDE_PLUGIN_ROOT}\"/scripts/classify-mcp.py --templates \"${CLAUDE_PLUGIN_ROOT}\"/templates; fi",
             "async": true,
-            "statusMessage": "quartermaster: syncing MCP tool tiers"
+            "statusMessage": "quartermaster: syncing MCP tool tiers (legacy governance)"
           }
         ]
       }

@@ -24,10 +24,10 @@ test:
 	pytest
 
 shellcheck:
-	shellcheck install.sh uninstall.sh tools/*.sh .claude/hooks/*.sh
+	shellcheck install.sh uninstall.sh tools/*.sh .claude/hooks/*.sh tuned/*.sh
 
 shfmt:
-	shfmt -d -i 2 install.sh uninstall.sh tools/*.sh .claude/hooks/*.sh
+	shfmt -d -i 2 install.sh uninstall.sh tools/*.sh .claude/hooks/*.sh tuned/*.sh
 
 config-check:
 	bash tools/check-config.sh
