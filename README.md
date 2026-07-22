@@ -59,6 +59,9 @@ The delivery vehicle itself is benchmarked: hook injection reproduces the
 certified effect (output ratio 0.97 vs the certified arm, identical turns —
 finding F10).
 
+**The full campaign writeup — abstract to ledger, findings F1–F10 —
+lives at [bench/docs/CAMPAIGN_WRITEUP.md](bench/docs/CAMPAIGN_WRITEUP.md).**
+
 ## How we measure
 
 [`bench/`](bench/) runs **SWE-bench Live** (fresh, contamination-resistant
