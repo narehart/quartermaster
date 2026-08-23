@@ -113,6 +113,8 @@ turn re-reads the whole context and emits full-price output.
 | technique | verdict | why |
 |---|---|---|
 | **Output tuning** (efficiency repo-instructions + thinking-budget cap) | ✅ **SHIPPED — certified at n=150** | Powered confirmation (3 reps × 25 instances × both arms, fresh controls): cost/solved ratio **0.66, 95% CI [0.55, 0.77]** — CI upper below 1. Resolve rate **identical** (24.0% vs 24.0%, diff CI [−4%, +4%]). Output tokens 0.63×, median turns 11 vs 16. **~34% cheaper per solve at zero measured quality cost** |
+| **Diagnostic front-loading** (tuned + pinned Sonnet pre-phase producing a structured diagnosis) | ❌ rejected on mechanism | Diag phase = **30%** of arm cost with **zero turn reduction** (11 vs 11); cost/solved 1.43× [0.68, 3.22]. Second confirmation of the additive-info pattern: agents re-verify rather than trust front-loaded context |
+| **Lint feedback on every edit** (tuned + PostToolUse pyflakes) | ⚪ inert — premise falsified | Hook live-fire-proven, then **0 events across 25 runs / 90+ edits**: frontier surgical edits are lint-clean. The failed-edit retry-loop premise (weaker-model era) doesn't transfer; edit-reliability arms not worth pursuing here |
 | **roust-only retrieval** ([narehart/roust](https://github.com/narehart/roust): one ranked, token-budgeted bundle per query instead of iterative grep; grep-family hard-denied by hook) | ❌ rejected as configured | Fully adopted (median 3 calls/run) and quality held — but **1.37×** cost/solved, CI [1.14, 1.94]. Turns didn't drop (18 vs 18): the agent used roust *in addition to* normal reading, so each ~8k-token bundle added context mass with no offsetting turn reduction. Diagnostic: recall isn't the bottleneck here, turn conversion is |
 
 ## Upcoming experiments
