@@ -299,6 +299,55 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F11 — Diagnostic front-loading: rejected on mechanism (n=25)
+
+opus-diag (tuned config + pinned Sonnet diagnosis pre-phase, cost counted
+in-arm) vs pooled tuned control (n=75), after the A6 resume completed the
+arm cleanly:
+
+- **Mechanism kill (b) fired exactly as preregistered**: diag pre-phase =
+  **30%** of arm cost (flag >25%) with **zero turn reduction** (median 11
+  vs 11). cost/run 1.16×; cost/solved ratio 1.43 [0.68, 3.22]; quality
+  within noise (20% vs 24%, CI [−17.3%, +8.0%]).
+- **Verdict: ❌ rejected.** Second independent confirmation of the F8
+  pattern: **front-loaded information is treated as ADDITIVE, not
+  substitutive** — the agent re-verifies everything itself, so you pay for
+  the information twice (roust bundles, now structured diagnoses). A
+  general caution against the "give the agent more upfront context"
+  technique family on this scaffold.
+
+### F12 — Lint feedback: inert-by-cleanliness (n=25; premise falsified)
+
+opus-lint (tuned config + PostToolUse pyflakes feedback on every .py edit)
+vs pooled tuned control, AFTER fixing A7 and live-fire-proving the hook
+(agent demonstrably receives pyflakes findings for broken writes):
+
+- **Zero feedback events across 25 runs (~90+ edits)** — Opus's surgical
+  edits are pyflakes-clean. The technique is correctly armed and has
+  nothing to catch.
+- Outcome numbers (cost/solved 0.88 [0.56, 1.39]; quality identical 24.0%)
+  are therefore another tuned replication, consistent with the quarantined
+  no-op arm (0.92) — a free A4-variance calibration: two independent tuned
+  re-runs both center near pooled tuned.
+- **Verdict: ⚪ inert — premise falsified.** The failed-edit retry-loop
+  premise (SWE-agent-era: "51% of trajectories contain failed edits") does
+  not transfer to frontier models making surgical edits under the tuned
+  config. The edit-reliability technique family is not worth further arms
+  on this scaffold.
+
+### A7 — First lint arm silently unarmed: PEP 668 pip guard (RESOLVED)
+
+The initial lint arm ran with only the py_compile fallback: Debian
+bookworm's PEP 668 "externally-managed-environment" guard rejected
+`pip install --user pyflakes` and `|| true` swallowed the failure. Forensic
+chain: zero events → hook logic verified locally → live-fire test (no
+feedback) → instrumented stdin capture (hook fires, payload correct) →
+PEP 668 confirmed in-image → fixed with `--break-system-packages` →
+live-fire re-test (agent receives findings). The unarmed arm's 25 runs were
+quarantined (jobs_round4/quarantine_lint_no_pyflakes) but retain value as a
+tuned replication (no-op hook). Cost of the forensic: ~$12 + ~$0.15 of
+live-fire probes.
+
 ### A6 — Round 4 aborted mid-arm: monthly API usage cap (INDETERMINATE, not a verdict)
 
 At ~2026-07-22T13:30Z, mid-way through the opus-diag arm, the API org

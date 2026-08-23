@@ -613,8 +613,13 @@ def run_opus_lint(
     (repo_path / "CLAUDE.md").write_text(EFFICIENCY_CLAUDE_MD)
     (meta_dir / "lint_hook.py").write_text(_LINT_HOOK_PY)
     settings_json = json.dumps(_LINT_SETTINGS)
+    # --break-system-packages: Debian bookworm's PEP 668 guard otherwise
+    # rejects the install SILENTLY (swallowed by `|| true`), leaving only the
+    # py_compile fallback — which made the first lint arm inert (F12/A7:
+    # opus produced zero syntax errors in 92 edits, so syntax-only feedback
+    # never fired).
     pre_cmd = (
-        "python3 -m pip install --quiet --user pyflakes 2>/dev/null || true; "
+        "python3 -m pip install --quiet --user --break-system-packages pyflakes 2>/dev/null || true; "
         "mkdir -p $HOME/.claude && "
         f"echo {shlex.quote(settings_json)} > $HOME/.claude/settings.json"
     )
