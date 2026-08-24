@@ -1,0 +1,213 @@
+{
+  "dataset": "SWE-bench-Live/SWE-bench-Live",
+  "split": "full",
+  "platform": "linux",
+  "generated_at": "2026-08-24T07:36:44Z",
+  "n_requested": 25,
+  "max_test_count": 2000,
+  "n_candidates_scanned": 62,
+  "n_skipped_no_image": 0,
+  "n_skipped_heavy": 37,
+  "instances": [
+    {
+      "instance_id": "awslabs__mcp-1154",
+      "repo": "awslabs/mcp",
+      "created_at": "2025-08-21 14:26:07",
+      "n_tests": 313,
+      "image": "starryzhang/sweb.eval.x86_64.awslabs_1776_mcp-1154",
+      "difficulty": "{'files': 6, 'hunks': 23, 'lines': 125}"
+    },
+    {
+      "instance_id": "django-json-api__django-rest-framework-json-api-1301",
+      "repo": "django-json-api/django-rest-framework-json-api",
+      "created_at": "2025-08-20 14:22:30",
+      "n_tests": 378,
+      "image": "starryzhang/sweb.eval.x86_64.django-json-api_1776_django-rest-framework-json-api-1301",
+      "difficulty": "{'files': 3, 'hunks': 3, 'lines': 9}"
+    },
+    {
+      "instance_id": "ipython__ipython-14966",
+      "repo": "ipython/ipython",
+      "created_at": "2025-08-20 12:18:03",
+      "n_tests": 1282,
+      "image": "starryzhang/sweb.eval.x86_64.ipython_1776_ipython-14966",
+      "difficulty": "{'files': 2, 'hunks': 6, 'lines': 44}"
+    },
+    {
+      "instance_id": "Archmonger__django-dbbackup-623",
+      "repo": "Archmonger/django-dbbackup",
+      "created_at": "2025-08-20 09:14:28",
+      "n_tests": 265,
+      "image": "starryzhang/sweb.eval.x86_64.archmonger_1776_django-dbbackup-623",
+      "difficulty": "{'files': 5, 'hunks': 5, 'lines': 21}"
+    },
+    {
+      "instance_id": "a2aproject__a2a-python-414",
+      "repo": "a2aproject/a2a-python",
+      "created_at": "2025-08-19 21:48:58",
+      "n_tests": 662,
+      "image": "starryzhang/sweb.eval.x86_64.a2aproject_1776_a2a-python-414",
+      "difficulty": "{'files': 2, 'hunks': 9, 'lines': 113}"
+    },
+    {
+      "instance_id": "ipython__ipython-14964",
+      "repo": "ipython/ipython",
+      "created_at": "2025-08-19 16:56:51",
+      "n_tests": 1371,
+      "image": "starryzhang/sweb.eval.x86_64.ipython_1776_ipython-14964",
+      "difficulty": "{'files': 1, 'hunks': 1, 'lines': 5}"
+    },
+    {
+      "instance_id": "docling-project__docling-2100",
+      "repo": "docling-project/docling",
+      "created_at": "2025-08-19 09:48:02",
+      "n_tests": 81,
+      "image": "starryzhang/sweb.eval.x86_64.docling-project_1776_docling-2100",
+      "difficulty": "{'files': 1, 'hunks': 8, 'lines': 142}"
+    },
+    {
+      "instance_id": "Archmonger__django-dbbackup-606",
+      "repo": "Archmonger/django-dbbackup",
+      "created_at": "2025-08-19 00:23:56",
+      "n_tests": 225,
+      "image": "starryzhang/sweb.eval.x86_64.archmonger_1776_django-dbbackup-606",
+      "difficulty": "{'files': 3, 'hunks': 5, 'lines': 12}"
+    },
+    {
+      "instance_id": "Archmonger__django-dbbackup-605",
+      "repo": "Archmonger/django-dbbackup",
+      "created_at": "2025-08-18 23:24:05",
+      "n_tests": 221,
+      "image": "starryzhang/sweb.eval.x86_64.archmonger_1776_django-dbbackup-605",
+      "difficulty": "{'files': 4, 'hunks': 4, 'lines': 22}"
+    },
+    {
+      "instance_id": "ansible__molecule-4534",
+      "repo": "ansible/molecule",
+      "created_at": "2025-08-18 14:11:08",
+      "n_tests": 761,
+      "image": "starryzhang/sweb.eval.x86_64.ansible_1776_molecule-4534",
+      "difficulty": "{'files': 9, 'hunks': 31, 'lines': 86}"
+    },
+    {
+      "instance_id": "Tuxemon__Tuxemon-3068",
+      "repo": "Tuxemon/Tuxemon",
+      "created_at": "2025-08-18 07:23:38",
+      "n_tests": 1547,
+      "image": "starryzhang/sweb.eval.x86_64.tuxemon_1776_tuxemon-3068",
+      "difficulty": "{'files': 6, 'hunks': 12, 'lines': 102}"
+    },
+    {
+      "instance_id": "Archmonger__django-dbbackup-604",
+      "repo": "Archmonger/django-dbbackup",
+      "created_at": "2025-08-18 04:58:18",
+      "n_tests": 219,
+      "image": "starryzhang/sweb.eval.x86_64.archmonger_1776_django-dbbackup-604",
+      "difficulty": "{'files': 4, 'hunks': 8, 'lines': 56}"
+    },
+    {
+      "instance_id": "Archmonger__django-dbbackup-601",
+      "repo": "Archmonger/django-dbbackup",
+      "created_at": "2025-08-18 00:03:22",
+      "n_tests": 213,
+      "image": "starryzhang/sweb.eval.x86_64.archmonger_1776_django-dbbackup-601",
+      "difficulty": "{'files': 13, 'hunks': 28, 'lines': 155}"
+    },
+    {
+      "instance_id": "spesmilo__electrum-10143",
+      "repo": "spesmilo/electrum",
+      "created_at": "2025-08-16 18:08:57",
+      "n_tests": 851,
+      "image": "starryzhang/sweb.eval.x86_64.spesmilo_1776_electrum-10143",
+      "difficulty": "{'files': 1, 'hunks': 1, 'lines': 2}"
+    },
+    {
+      "instance_id": "SYSTRAN__faster-whisper-1345",
+      "repo": "SYSTRAN/faster-whisper",
+      "created_at": "2025-08-16 11:27:33",
+      "n_tests": 18,
+      "image": "starryzhang/sweb.eval.x86_64.systran_1776_faster-whisper-1345",
+      "difficulty": "{'files': 1, 'hunks': 1, 'lines': 18}"
+    },
+    {
+      "instance_id": "Azure-Samples__azure-search-openai-demo-2682",
+      "repo": "Azure-Samples/azure-search-openai-demo",
+      "created_at": "2025-08-16 00:06:16",
+      "n_tests": 302,
+      "image": "starryzhang/sweb.eval.x86_64.azure-samples_1776_azure-search-openai-demo-2682",
+      "difficulty": "{'files': 1, 'hunks': 1, 'lines': 2}"
+    },
+    {
+      "instance_id": "IBM__mcp-context-forge-754",
+      "repo": "IBM/mcp-context-forge",
+      "created_at": "2025-08-15 12:53:36",
+      "n_tests": 1730,
+      "image": "starryzhang/sweb.eval.x86_64.ibm_1776_mcp-context-forge-754",
+      "difficulty": "{'files': 1, 'hunks': 1, 'lines': 17}"
+    },
+    {
+      "instance_id": "patroni__patroni-3426",
+      "repo": "patroni/patroni",
+      "created_at": "2025-08-14 11:08:42",
+      "n_tests": 711,
+      "image": "starryzhang/sweb.eval.x86_64.patroni_1776_patroni-3426",
+      "difficulty": "{'files': 1, 'hunks': 5, 'lines': 13}"
+    },
+    {
+      "instance_id": "jazzband__djangorestframework-simplejwt-928",
+      "repo": "jazzband/djangorestframework-simplejwt",
+      "created_at": "2025-08-13 16:15:58",
+      "n_tests": 190,
+      "image": "starryzhang/sweb.eval.x86_64.jazzband_1776_djangorestframework-simplejwt-928",
+      "difficulty": "{'files': 3, 'hunks': 7, 'lines': 103}"
+    },
+    {
+      "instance_id": "NVIDIA__NeMo-Guardrails-1328",
+      "repo": "NVIDIA/NeMo-Guardrails",
+      "created_at": "2025-08-13 13:22:58",
+      "n_tests": 1172,
+      "image": "starryzhang/sweb.eval.x86_64.nvidia_1776_nemo-guardrails-1328",
+      "difficulty": "{'files': 1, 'hunks': 3, 'lines': 17}"
+    },
+    {
+      "instance_id": "certtools__intelmq-2632",
+      "repo": "certtools/intelmq",
+      "created_at": "2025-08-12 19:15:00",
+      "n_tests": 892,
+      "image": "starryzhang/sweb.eval.x86_64.certtools_1776_intelmq-2632",
+      "difficulty": "{'files': 9, 'hunks': 10, 'lines': 221}"
+    },
+    {
+      "instance_id": "Kozea__Radicale-1844",
+      "repo": "Kozea/Radicale",
+      "created_at": "2025-08-12 14:18:16",
+      "n_tests": 245,
+      "image": "starryzhang/sweb.eval.x86_64.kozea_1776_radicale-1844",
+      "difficulty": "{'files': 10, 'hunks': 11, 'lines': 29}"
+    },
+    {
+      "instance_id": "PyPSA__PyPSA-1325",
+      "repo": "PyPSA/PyPSA",
+      "created_at": "2025-08-12 12:51:17",
+      "n_tests": 688,
+      "image": "starryzhang/sweb.eval.x86_64.pypsa_1776_pypsa-1325",
+      "difficulty": "{'files': 2, 'hunks': 2, 'lines': 10}"
+    },
+    {
+      "instance_id": "PriorLabs__TabPFN-446",
+      "repo": "PriorLabs/TabPFN",
+      "created_at": "2025-08-11 16:14:56",
+      "n_tests": 447,
+      "image": "starryzhang/sweb.eval.x86_64.priorlabs_1776_tabpfn-446",
+      "difficulty": "{'files': 1, 'hunks': 1, 'lines': 6}"
+    },
+    {
+      "instance_id": "a2aproject__a2a-python-394",
+      "repo": "a2aproject/a2a-python",
+      "created_at": "2025-08-11 11:36:47",
+      "n_tests": 638,
+      "image": "starryzhang/sweb.eval.x86_64.a2aproject_1776_a2a-python-394",
+      "difficulty": "{'files': 2, 'hunks': 7, 'lines': 36}"
+    }
+  ]
+}
