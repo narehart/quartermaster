@@ -299,6 +299,35 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F14 — Held-out generalization: the shipped effect REPLICATES (n=24 paired)
+
+Per PREREG_HOLDOUT.md (locked pre-data with the disjoint subset): 25
+never-used instances (image-verified, same selection procedure, zero overlap
+with the development subset), contemporaneous opus-solo vs opus-tuned arms
+(satisfying the A8 drift rule by construction). Baseline sanity passed
+(control resolves 25% — inside the original 24–32% regime).
+
+| | tuned | solo control |
+|---|---|---|
+| resolve | **8/24 (33%)** | 6/24 (25%) |
+| median turns | 14.0 | 19.5 (ratio 0.72 ≈ certified 0.69) |
+| output tokens | ratio 0.86 | (attenuated vs certified 0.63) |
+| total cost | $14.45 | $17.41 — cheaper on 18/24 |
+| cost/solved | $1.81 | $2.90 |
+
+- **H1 MET**: cost/solved ratio median **0.62**, 95% CI [0.27, 1.12], with
+  the certified 0.66 comfortably inside the CI.
+- **H2 MET**: pass diff +8.3% [−8.3%, +25.0%] — quality point estimate UP.
+- Mechanism: the turn signature replicates almost exactly (0.72 vs 0.69);
+  the output-token signature attenuates (0.86 vs 0.63) — on this subset the
+  effect is carried more by turn reduction than narration reduction. Honest
+  note, not a concern: the composite effect lands on the certified value.
+
+**Verdict (pre-committed): generalization supported.** The shipped
+configuration's effect is not an artifact of the development subset. The
+README claim gains "replicates on a held-out subset" (directional, n=24×1;
+the n=150 certification remains the strength claim).
+
 ### F13 — Instruction-block v2 sweep: both arms null — v1 is at the instruction-level floor
 
 Per PREREG_V2.md: v2a "trust-tools" and v2b "no-re-read" (each = certified
