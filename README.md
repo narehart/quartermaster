@@ -39,7 +39,8 @@ token-reduction↔cost correlation r=0.15).
 ## Install the shipped technique
 
 The certified **output tuning** configuration (~34% cheaper per solved task,
-identical resolve rate — [certification](bench/docs/SWEBENCH_LIVE_ANALYSIS.md))
+identical resolve rate; certified at n=150 and replicated on a held-out
+subset of never-used tasks — [evidence](bench/docs/SWEBENCH_LIVE_ANALYSIS.md))
 ships as this plugin:
 
 ```bash
@@ -112,7 +113,7 @@ turn re-reads the whole context and emits full-price output.
 
 | technique | verdict | why |
 |---|---|---|
-| **Output tuning** (efficiency repo-instructions + thinking-budget cap) | ✅ **SHIPPED — certified at n=150** | Powered confirmation (3 reps × 25 instances × both arms, fresh controls): cost/solved ratio **0.66, 95% CI [0.55, 0.77]** — CI upper below 1. Resolve rate **identical** (24.0% vs 24.0%, diff CI [−4%, +4%]). Output tokens 0.63×, median turns 11 vs 16. **~34% cheaper per solve at zero measured quality cost** |
+| **Output tuning** (efficiency repo-instructions + thinking-budget cap) | ✅ **SHIPPED — certified at n=150, replicated on a held-out subset** | Powered confirmation (3 reps × 25 instances × both arms, fresh controls): cost/solved ratio **0.66, 95% CI [0.55, 0.77]** — CI upper below 1. Resolve rate **identical** (24.0% vs 24.0%, diff CI [−4%, +4%]). Output tokens 0.63×, median turns 11 vs 16. **~34% cheaper per solve at zero measured quality cost** |
 | **Diagnostic front-loading** (tuned + pinned Sonnet pre-phase producing a structured diagnosis) | ❌ rejected on mechanism | Diag phase = **30%** of arm cost with **zero turn reduction** (11 vs 11); cost/solved 1.43× [0.68, 3.22]. Second confirmation of the additive-info pattern: agents re-verify rather than trust front-loaded context |
 | **Lint feedback on every edit** (tuned + PostToolUse pyflakes) | ⚪ inert — premise falsified | Hook live-fire-proven, then **0 events across 25 runs / 90+ edits**: frontier surgical edits are lint-clean. The failed-edit retry-loop premise (weaker-model era) doesn't transfer; edit-reliability arms not worth pursuing here |
 | **Instruction v2: "trust-tools" / "no-re-read"** (certified block + one targeted addition each) | ⚪ both null — **v1 is at the instruction-level floor** | Mechanism gate resolved it: tuned's re-read rate is already ~0 — v1 had eliminated the target behavior. With F12 (edits lint-clean), every measured residual waste channel under the shipped block is empty; further gains need different physics, not better prompts |

@@ -79,6 +79,11 @@ def main() -> None:
     ap.add_argument("--platform", default="linux", choices=["linux", "windows"])
     ap.add_argument("--out", default="swebench_live_subset.json")
     ap.add_argument(
+        "--exclude",
+        default="",
+        help="Path to an existing subset JSON whose instance_ids are excluded (held-out selection).",
+    )
+    ap.add_argument(
         "--scan-limit",
         type=int,
         default=400,
@@ -94,6 +99,14 @@ def main() -> None:
 
     rows = [dict(r) for r in ds]
     rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+
+    excluded: set = set()
+    if args.exclude:
+        import json as _json
+        with open(args.exclude) as _f:
+            excluded = {i["instance_id"] for i in _json.load(_f)["instances"]}
+        log(f"Excluding {len(excluded)} instance_ids from {args.exclude}")
+        rows = [r for r in rows if r["instance_id"] not in excluded]
 
     selected: list[dict] = []
     scanned = 0
