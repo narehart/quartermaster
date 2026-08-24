@@ -1,15 +1,17 @@
 # Token Reduction Is Mostly Dead: a preregistered campaign on the real cost of coding agents
 
-*Quartermaster campaign writeup — July 2026. Status: complete through F9;
-delivery-vehicle re-bench (PREREG_VEHICLE.md) pending §7 update.*
+*Quartermaster campaign writeup — July–August 2026. Status: complete
+through F13 (14 techniques adjudicated); the shipped configuration is at the
+measured instruction-level floor.*
 
 ## Abstract
 
 We ran a preregistered, cache-priced, quality-gated benchmark campaign to
 find techniques that reduce the cost of long-horizon agentic coding
 (SWE-bench Live, real Claude Code, per-task Docker, exact model pins).
-Across ten techniques and ~$350 of measured spend, **every context-reduction
-and model-substitution technique failed** — several catastrophically — and
+Across fourteen techniques and ~$500 of measured spend, **every
+context-reduction, model-substitution, and information-front-loading
+technique failed** — several catastrophically — and
 the failures share one arithmetic cause: **prompt caching has already
 collapsed the context term of agent cost.** Cached re-reads are billed at
 0.1×; removing such tokens saves almost nothing (whale-capping: fully
@@ -19,9 +21,18 @@ cost). What binds instead are the full-price terms: **turn count** and
 **output tokens**. The one technique aimed at those terms — a fixed
 efficiency instruction block plus a thinking-budget cap — **certified at
 n=150: cost-per-solved ratio 0.66 (95% CI [0.55, 0.77]) at an identical
-resolve rate (24.0% vs 24.0%)**, and now ships as a Claude Code plugin. Our
-central negative finding was independently replicated at 40× our scale
-within days (arXiv:2607.12161). The broader claim: most published "token
+resolve rate (24.0% vs 24.0%)**, and now ships as a Claude Code plugin. Post-shipping rounds established three
+generalizations: **agents treat front-loaded information as additive, not
+substitutive** (retrieval bundles and generated diagnoses both rejected —
+agents re-verify everything they are given); the failed-edit retry-loop
+premise of the edit-reliability literature **does not transfer to frontier
+models** (zero lint-worthy errors in 90+ surgical edits); and the shipped
+configuration sits at the **measured instruction-level floor** (every
+residual waste channel — re-reads, lint retries, re-verification — measures
+~zero under it). Our central negative finding was independently replicated
+at 40× our scale within days (arXiv:2607.12161), and the verification-dial
+mechanism we exploited was independently proven instruction-causal at 18×
+in the waste direction (arXiv:2608.01347). The broader claim: most published "token
 savings" numbers are cache-blind, and under real cache-tier pricing they can
 invert into cost increases.
 
@@ -166,6 +177,43 @@ less re-exploration (turns), at zero measured quality cost. It ships as a
 Claude Code plugin (v0.9.0): the certified block auto-injected at session
 start, the cap set once user-level.
 
+### 4.8 Post-shipping rounds: the additive-info law, a falsified premise, and the floor (F10–F13)
+
+**Delivery vehicle validated (F10).** The plugin's hook-injection delivery
+reproduces the certified effect (output ratio 0.97 vs the certified arm,
+identical turns) — what ships is what was measured.
+
+**Front-loaded information is additive, not substitutive (F8 + F11).** Two
+independent instantiations — recall-first retrieval bundles (roust: fully
+adopted, quality-neutral, 1.37× [1.14, 1.94]) and pinned-model structured
+diagnoses (30% of arm cost, zero turn reduction) — failed the same way: the
+agent re-verifies everything it is given, so provided information is paid
+for twice. Boundary (Handoff Debt, arXiv:2606.02875): front-loading pays
+only when it displaces work the agent cannot skip. Verification is
+instruction-causal (arXiv:2608.01347: up to 18× cost in the waste
+direction); the trust direction, which we tested, turns out to have no mass
+left under our block (below).
+
+**The retry-loop premise is falsified for frontier models (F12).** A
+live-fire-proven pyflakes feedback hook produced **zero events across 25
+runs and 90+ edits** — Opus's surgical edits are lint-clean. The
+edit-reliability technique family (premised on weaker-model-era data:
+"51% of trajectories contain failed edits") has nothing to fix here.
+
+**The instruction-level floor (F13).** Two v2 blocks (trust-tools,
+no-re-read) were null because the certified v1 block had already zeroed
+their targets: offset-aware re-reads under v1 measure ~0/run (the industry's
+"42% of avoidable spend is re-reads" is real — for untuned agents). With
+edits lint-clean and verification minimal, every measured residual waste
+channel under the shipped block is empty. **Further gains on this scaffold
+require different physics, not better prompts.**
+
+**A temporal-drift methodology rule (A8).** Three independent August
+same-config replications all undercut the July control by 7–13%/run — real
+epoch drift, direction cheaper. Rule adopted: cross-epoch comparisons
+require contemporary controls; a new arm judged against an old control
+flatters itself by roughly the drift.
+
 ## 5. External corroboration
 
 - **arXiv:2607.12161** (*Token Reduction Is Not Cost Reduction*, 2,848
@@ -227,6 +275,14 @@ cost more than the mechanism saved. Benchmarks that count tokens without
 pricing cache tiers are measuring the wrong thing, and quality-ungated cost
 claims are not cost claims at all.
 
+The post-shipping rounds add the campaign's ending: the ~150-word block is
+not just a win but — on this scaffold — the *whole* instruction-reachable
+win. Under it, agents no longer re-read, rarely re-verify, and make
+lint-clean edits; the waste categories the literature measures on untuned
+agents are already empty. The space between an untuned agent and the floor
+is worth ~34% of cost-per-solved; the space below the floor belongs to
+different mechanisms than prompting.
+
 ## Appendix: experiment ledger
 
 | # | technique | class | verdict | key number |
@@ -241,6 +297,10 @@ claims are not cost claims at all.
 | 7 | simple early termination | turns | ⚪ screened, $0 | no doomed-run signal |
 | 8 | roust-only retrieval | turns | ❌ | 1.37× [1.14,1.94]; turns flat |
 | 9 | **output tuning** | output+turns | **✅ SHIPPED** | **0.66 [0.55, 0.77], quality identical, n=150** |
+| 10 | delivery vehicle (hook vs file) | validation | ✅ equivalent | output ratio 0.97 vs certified arm |
+| 11 | diagnostic front-loading | turns | ❌ | diag = 30% of cost, zero turn cut; additive-info ×2 |
+| 12 | lint feedback per edit | turns | ⚪ premise falsified | 0 events / 90+ edits; frontier edits lint-clean |
+| 13 | instruction v2 (trust / no-re-read) | output+turns | ⚪ null — **floor** | v1 already zeroed the targets (re-reads ~0/run) |
 
-Full findings: SWEBENCH_LIVE_ANALYSIS.md (F1–F9, A1–A5). Preregistrations:
+Full findings: SWEBENCH_LIVE_ANALYSIS.md (F1–F13, A1–A8). Preregistrations:
 PREREG_*.md. Raw records: ../results/*.csv.
