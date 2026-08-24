@@ -299,6 +299,45 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F13 — Instruction-block v2 sweep: both arms null — v1 is at the instruction-level floor
+
+Per PREREG_V2.md: v2a "trust-tools" and v2b "no-re-read" (each = certified
+v1 block + one targeted addition), n=25 each vs pooled tuned (n=75).
+
+- **The mechanism gate resolved the question before the cost numbers did:**
+  the tuned baseline's offset-aware re-read rate is ALREADY ~zero (median 0,
+  mean 0.05/run). v1's "do not re-read files you have already seen" line had
+  eliminated the target behavior; both v2 arms had no mass to remove.
+- v2a: cost/solved 0.96 [0.58, 1.47], quality flat, turns 14 vs 11 — null.
+- v2b: cost/solved 0.81 [0.51, 1.07], quality +4% [−2.7, +13.3] — but with
+  zero causal channel (re-reads 0, output ≈ tuned, turns ≈ tuned) and
+  sitting inside the contemporary tuned-replication band (see A8), this is
+  drift+noise, not effect. NOT a powered-confirmation candidate.
+- **Verdict: ⚪ both null — and the informative kind.** Combined with F12
+  (edits lint-clean) and this sweep (re-reads zero), every measured residual
+  waste channel under v1 is ~empty: **the certified tuned config sits at
+  the practical floor for instruction-level techniques on this scaffold.**
+  The literature's re-read waste (~42% of avoidable spend, industry) is
+  real for UNTUNED agents — v1 already collected that win. Further gains
+  need different physics, not better prompts. (The novel "trust-instruction"
+  hypothesis is answered for this scaffold: v1 already embodies its
+  effective content; arXiv:2608.01347's 18× waste dial confirms the
+  direction that matters is not adding waste, which v1 avoids.)
+
+### A8 — Temporal cost drift: August same-config runs ~7–13% cheaper than July control
+
+Three independent August "tuned + no-op variation" arms (F12 lint: $0.430/run,
+A7 quarantined: $0.451, v2b: $0.462) ALL undercut the July pooled tuned
+control ($0.496/run) by 7–13%, with cost/solved replications at 0.81–0.92.
+Same config, same subset, month apart → a real epoch drift (API-side,
+model-side, or repo-state), direction: cheaper over time.
+
+**Methodology rule adopted: cross-epoch comparisons require contemporary
+controls.** Any future arm must be judged against a control band run in the
+same epoch (the three August replications now serve as that band), not
+against the July pooled control alone. This drift flatters any new arm
+compared naively against old controls — v2b's 0.81 is the worked example.
+
 ### F11 — Diagnostic front-loading: rejected on mechanism (n=25)
 
 opus-diag (tuned config + pinned Sonnet diagnosis pre-phase, cost counted
