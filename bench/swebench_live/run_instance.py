@@ -146,6 +146,8 @@ def main() -> None:
             "opus-masked",
             "opus-passthru",
             "opus-tuned",
+            "opus-v2a",
+            "opus-v2b",
             "opus-shipped",
             "opus-diag",
             "opus-lint",
@@ -215,6 +217,19 @@ def main() -> None:
                 api_key=os.environ["ANTHROPIC_API_KEY"],
                 model=PLANNER_MODEL,
                 max_budget_usd=args.max_budget_usd,
+            )
+            patch = agent_runner.extract_patch(repo_path)
+        elif arm in ("opus-v2a", "opus-v2b"):
+            block = agent_runner.V2A_TRUST_TOOLS if arm == "opus-v2a" else agent_runner.V2B_NO_REREAD
+            run_result = agent_runner.run_opus_tuned(
+                instance,
+                repo_path,
+                meta_dir,
+                api_key=os.environ["ANTHROPIC_API_KEY"],
+                model=PLANNER_MODEL,
+                max_budget_usd=args.max_budget_usd,
+                block=block,
+                arm_label=arm,
             )
             patch = agent_runner.extract_patch(repo_path)
         elif arm == "opus-shipped":
@@ -313,7 +328,7 @@ def main() -> None:
             )
             if arm == "opus-diag":
                 expected = [PLANNER_MODEL, agent_runner.DIAG_MODEL]
-            elif arm in ("opus-solo", "opus-tuned", "opus-shipped", "opus-lint", "opus-roust") or arm in MASKED_ARMS:
+            elif arm in ("opus-solo", "opus-tuned", "opus-v2a", "opus-v2b", "opus-shipped", "opus-lint", "opus-roust") or arm in MASKED_ARMS:
                 expected = [PLANNER_MODEL]
             elif arm in PREWALK_ARMS:
                 expected = [PLANNER_MODEL, PREWALK_ARMS[arm]]

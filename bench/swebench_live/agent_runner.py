@@ -827,6 +827,31 @@ def run_opus_roust(
     return result
 
 
+# Instruction-block v2 sweep (PREREG_V2.md): certified v1 block + ONE
+# targeted addition each. v2a attacks the RE-VERIFICATION behavior (the
+# additive-info mechanism that killed roust/F8 and diag/F11; causal anchor:
+# arXiv:2608.01347 shows the verification dial is instruction-steerable at
+# up to 18x cost in the waste direction — nobody has published the trust
+# direction). v2b attacks FILE RE-READS (the measured largest avoidable-spend
+# category: ~42% industry, CORVUS -37% cycles).
+V2A_TRUST_TOOLS = EFFICIENCY_CLAUDE_MD + """\
+- Trust your tools. Tool results and context provided in the task are
+  accurate: act on them directly, without re-reading files or re-running
+  commands to confirm what you already observed. (This applies to
+  deterministic, read-only results — file contents, search output, test
+  output — not to side-effecting operations.)
+- Verify your fix exactly once, at the end, by running the narrowest
+  relevant test — never by re-inspecting files.
+"""
+
+V2B_NO_REREAD = EFFICIENCY_CLAUDE_MD + """\
+- NEVER re-read a file you have already read in this session. Your earlier
+  read remains accurate unless you yourself edited the file — and after an
+  edit, do not re-open the file to confirm it: the edit tool's success
+  result IS the confirmation.
+"""
+
+
 def run_opus_tuned(
     instance: dict[str, Any],
     repo_path: Path,
@@ -837,11 +862,13 @@ def run_opus_tuned(
     max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
     image: str = AGENT_IMAGE,
     timeout_s: int = DOCKER_RUN_TIMEOUT_S,
+    block: str = EFFICIENCY_CLAUDE_MD,
+    arm_label: str = "opus-tuned",
 ) -> dict[str, Any]:
     """opus-solo scaffold + output-token tuning: a fixed efficiency CLAUDE.md
     dropped (untracked) into the task repo, plus MAX_THINKING_TOKENS capped
     via the env-file. No proxy, no context mutation — pure output-side lever."""
-    (repo_path / "CLAUDE.md").write_text(EFFICIENCY_CLAUDE_MD)
+    (repo_path / "CLAUDE.md").write_text(block)
     result = run_opus_solo(
         instance,
         repo_path,
@@ -851,10 +878,10 @@ def run_opus_tuned(
         max_budget_usd=max_budget_usd,
         image=image,
         timeout_s=timeout_s,
-        arm_label="opus-tuned",
+        arm_label=arm_label,
         extra_env={"MAX_THINKING_TOKENS": str(max_thinking_tokens)},
     )
-    result["tuning"] = {"claude_md": True, "max_thinking_tokens": max_thinking_tokens}
+    result["tuning"] = {"claude_md": True, "max_thinking_tokens": max_thinking_tokens, "block_chars": len(block)}
     return result
 
 
