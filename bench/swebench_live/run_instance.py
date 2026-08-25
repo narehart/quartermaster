@@ -147,6 +147,7 @@ def main() -> None:
             "opus-passthru",
             "opus-tuned",
             "opus-budget",
+            "opus-declare",
             "opus-v2a",
             "opus-v2b",
             "opus-shipped",
@@ -218,6 +219,18 @@ def main() -> None:
                 api_key=os.environ["ANTHROPIC_API_KEY"],
                 model=PLANNER_MODEL,
                 max_budget_usd=args.max_budget_usd,
+            )
+            patch = agent_runner.extract_patch(repo_path)
+        elif arm == "opus-declare":
+            run_result = agent_runner.run_opus_tuned(
+                instance,
+                repo_path,
+                meta_dir,
+                api_key=os.environ["ANTHROPIC_API_KEY"],
+                model=PLANNER_MODEL,
+                max_budget_usd=args.max_budget_usd,
+                block=agent_runner.BUDGET_CLAUDE_MD,
+                arm_label="opus-declare",
             )
             patch = agent_runner.extract_patch(repo_path)
         elif arm == "opus-budget":
@@ -339,7 +352,7 @@ def main() -> None:
             )
             if arm == "opus-diag":
                 expected = [PLANNER_MODEL, agent_runner.DIAG_MODEL]
-            elif arm in ("opus-solo", "opus-tuned", "opus-budget", "opus-v2a", "opus-v2b", "opus-shipped", "opus-lint", "opus-roust") or arm in MASKED_ARMS:
+            elif arm in ("opus-solo", "opus-tuned", "opus-budget", "opus-declare", "opus-v2a", "opus-v2b", "opus-shipped", "opus-lint", "opus-roust") or arm in MASKED_ARMS:
                 expected = [PLANNER_MODEL]
             elif arm in PREWALK_ARMS:
                 expected = [PLANNER_MODEL, PREWALK_ARMS[arm]]
