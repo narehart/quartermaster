@@ -299,6 +299,28 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F16/F17 — Budget visibility: an apparent floor-break caught and killed by isolation
+
+**F16 (opus-budget, n=25):** certified block + $1.00 budget declaration + a
+live countdown hook. Countdown NEVER fired (0/25 runs crossed a threshold;
+one-turn-stale estimates under a generous budget), yet the arm posted
+cost/run $0.316 vs the August band's $0.441 and cost/solved ratio 0.62
+[0.32, 1.05] with quality up — a formal directional pass whose preregistered
+mechanism was demonstrably inert. Only remaining candidate driver: the
+static declaration line.
+
+**F17 (opus-declare, n=25, isolation):** the declaration line ONLY.
+Result: **null** — cost/solved ratio vs band 0.94 [0.50, 1.73], quality
+flat, and the twin test fails (declare/budget cost ratio 1.31, not ≈1.0).
+
+**Verdict:** the declaration is not a lever; with the countdown never firing
+and the declaration null, F16's 0.62 (whose CI always included 1) is
+attributed to a favorable n=25 draw. **No ship. The F13 instruction-level
+floor stands.** The information-channel branch of the pipeline closes null.
+Methodology note: this is the pattern A8/F13 warned about — an exciting
+small-n cost dip with no surviving mechanism is noise until isolated; the
+$10 isolation arm prevented a false one-line "floor-break" from shipping.
+
 ### F14 — Held-out generalization: the shipped effect REPLICATES (n=24 paired)
 
 Per PREREG_HOLDOUT.md (locked pre-data with the disjoint subset): 25
