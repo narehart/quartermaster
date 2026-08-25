@@ -26,6 +26,16 @@ ALREADY at the instruction floor.
   reported for reference only.
 - ~$13 expected; abort gate $25 on jobs_budget.
 
+## Amendment (pre-data, before launch): countdown timing semantics
+
+Validation found the transcript flushes a turn's usage only AFTER the turn
+completes, so the hook's estimate is ONE TURN STALE — thresholds are
+evaluated against spend through the previous turn. Acceptable for the
+mechanism (multi-turn runs see a monotone countdown); noted so the mechanism
+metric is interpreted correctly. A stdin-reading variant was wrongly blamed
+first (ghost-chase recorded as part of A9): trivial single-turn validation
+tasks see zero usage at hook time, which mimicked delivery failure.
+
 ## Metrics & gates
 
 - Primary: cost/solved ratio vs the August control band (bootstrap over

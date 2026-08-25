@@ -665,19 +665,23 @@ BUDGET_CLAUDE_MD = EFFICIENCY_CLAUDE_MD + f"""\
 """
 
 _BUDGET_HOOK_PY = '''\
+import glob
 import json
 import os
-import sys
 
+# NOTE: deliberately does NOT read stdin. Stdin-reading variants of this hook
+# silently emitted nothing live despite identical logic firing in manual
+# replay (anomaly A9, root cause undetermined, timeboxed); the no-stdin
+# pattern is the one proven to deliver additionalContext end-to-end.
 BUDGET = __BUDGET__
 PRICES = {"input_tokens": 15e-6, "cache_read_input_tokens": 1.5e-6,
           "cache_creation_input_tokens": 18.75e-6, "output_tokens": 75e-6}
 STATE = "/tmp/qm_budget_state"
 
-d = json.load(sys.stdin)
-tp = d.get("transcript_path")
-if not tp or not os.path.exists(tp):
-    sys.exit(0)
+paths = glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl"))
+if not paths:
+    raise SystemExit(0)
+tp = max(paths, key=os.path.getmtime)
 spent = 0.0
 with open(tp, errors="replace") as f:
     for line in f:
@@ -719,7 +723,7 @@ _BUDGET_SETTINGS = {
     "hooks": {
         "PostToolUse": [
             {
-                "matcher": ".*",
+                "matcher": "",
                 "hooks": [{"type": "command", "command": "python3 /meta/budget_hook.py"}],
             }
         ]
@@ -736,11 +740,14 @@ def run_opus_budget(
     max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
     image: str = AGENT_IMAGE,
     timeout_s: int = DOCKER_RUN_TIMEOUT_S,
+    budget_usd: float = BUDGET_USD,
 ) -> dict[str, Any]:
     """Certified tuned config + live budget-countdown channel."""
     meta_dir.mkdir(parents=True, exist_ok=True)
     (repo_path / "CLAUDE.md").write_text(BUDGET_CLAUDE_MD)
-    (meta_dir / "budget_hook.py").write_text(_BUDGET_HOOK_PY)
+    (meta_dir / "budget_hook.py").write_text(
+        _BUDGET_HOOK_PY.replace(str(BUDGET_USD), str(budget_usd), 1)
+    )
     settings_json = json.dumps(_BUDGET_SETTINGS)
     pre_cmd = (
         "rm -f /tmp/qm_budget_state; mkdir -p $HOME/.claude && "
