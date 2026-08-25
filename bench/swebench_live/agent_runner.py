@@ -648,6 +648,129 @@ def run_opus_lint(
     return result
 
 
+# Budget-countdown arm (PREREG_BUDGET.md): certified tuned config + a live
+# budget-visibility channel. A PostToolUse hook estimates spend from the
+# run's own transcript (usage x opus prices) and injects remaining-budget
+# context at threshold crossings (50/75/90%) — an INFORMATION channel, not a
+# style instruction, so the F13 instruction-floor result does not cover it.
+# Precedent: TALE (arXiv:2412.18547) -68% output from budget prompts (untuned
+# models); BAGEN (arXiv:2606.00198) finds frontier prompting-only effects
+# weak — this arm adjudicates which applies here.
+BUDGET_USD = 1.00
+
+BUDGET_CLAUDE_MD = EFFICIENCY_CLAUDE_MD + f"""\
+- This task has a cost budget of ${BUDGET_USD:.2f}. You will receive budget
+  updates as you work. Treat remaining budget as a scarce resource: prefer
+  the cheapest action that makes progress.
+"""
+
+_BUDGET_HOOK_PY = '''\
+import json
+import os
+import sys
+
+BUDGET = __BUDGET__
+PRICES = {"input_tokens": 15e-6, "cache_read_input_tokens": 1.5e-6,
+          "cache_creation_input_tokens": 18.75e-6, "output_tokens": 75e-6}
+STATE = "/tmp/qm_budget_state"
+
+d = json.load(sys.stdin)
+tp = d.get("transcript_path")
+if not tp or not os.path.exists(tp):
+    sys.exit(0)
+spent = 0.0
+with open(tp, errors="replace") as f:
+    for line in f:
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        u = ((ev.get("message") or {}).get("usage")) if isinstance(ev, dict) else None
+        if isinstance(u, dict):
+            for k, p in PRICES.items():
+                spent += (u.get(k) or 0) * p
+frac = spent / BUDGET
+fired = set()
+if os.path.exists(STATE):
+    fired = set(open(STATE).read().split())
+for thresh in ("0.5", "0.75", "0.9"):
+    if frac >= float(thresh) and thresh not in fired:
+        fired.add(thresh)
+        open(STATE, "w").write(" ".join(sorted(fired)))
+        remaining = max(BUDGET - spent, 0.0)
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PostToolUse",
+                        "additionalContext": (
+                            "[budget] $%.2f of $%.2f spent; $%.2f remaining. "
+                            "Prioritize finishing with the cheapest sufficient path."
+                            % (spent, BUDGET, remaining)
+                        ),
+                    }
+                }
+            )
+        )
+        break
+'''.replace("__BUDGET__", str(BUDGET_USD))
+
+_BUDGET_SETTINGS = {
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": ".*",
+                "hooks": [{"type": "command", "command": "python3 /meta/budget_hook.py"}],
+            }
+        ]
+    }
+}
+
+
+def run_opus_budget(
+    instance: dict[str, Any],
+    repo_path: Path,
+    meta_dir: Path,
+    api_key: str,
+    model: str = "claude-opus-4-8",
+    max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
+    image: str = AGENT_IMAGE,
+    timeout_s: int = DOCKER_RUN_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Certified tuned config + live budget-countdown channel."""
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    (repo_path / "CLAUDE.md").write_text(BUDGET_CLAUDE_MD)
+    (meta_dir / "budget_hook.py").write_text(_BUDGET_HOOK_PY)
+    settings_json = json.dumps(_BUDGET_SETTINGS)
+    pre_cmd = (
+        "rm -f /tmp/qm_budget_state; mkdir -p $HOME/.claude && "
+        f"echo {shlex.quote(settings_json)} > $HOME/.claude/settings.json"
+    )
+    result = run_opus_solo(
+        instance,
+        repo_path,
+        meta_dir,
+        api_key,
+        model=model,
+        max_budget_usd=max_budget_usd,
+        image=image,
+        timeout_s=timeout_s,
+        arm_label="opus-budget",
+        extra_env={"MAX_THINKING_TOKENS": "8000"},
+        pre_cmd=pre_cmd,
+    )
+    # mechanism metric: how many budget messages actually fired
+    fired = 0
+    try:
+        for line in (meta_dir / "agent_run.jsonl").read_text(errors="replace").splitlines():
+            if "[budget]" in line:
+                fired += 1
+    except OSError:
+        pass
+    result["budget"] = {"budget_usd": BUDGET_USD, "messages_fired": fired}
+    return result
+
+
 # Vehicle re-bench (PREREG_VEHICLE.md): the SHIPPED delivery of the certified
 # output tuning — SessionStart-hook additionalContext injection (as the v0.9.0
 # plugin does) + MAX_THINKING_TOKENS env — with NO repo CLAUDE.md. Tests
