@@ -321,6 +321,27 @@ Methodology note: this is the pattern A8/F13 warned about — an exciting
 small-n cost dip with no surviving mechanism is noise until isolated; the
 $10 isolation arm prevented a false one-line "floor-break" from shipping.
 
+### F15 — Restart/retry/cascade family screened out by simulation ($0)
+
+Simulated every (per-attempt budget cap × max attempts) restart policy
+against our own run distributions (primary: 3 certified tuned reps per
+instance, n=75; sensitivity: +2 no-op replication arms, n=125). **Every
+policy is worse than single-attempt** — best (cap $0.40, K=2) is 132–143%
+of baseline cost/solved.
+
+**Mechanism (new distribution fact):** the SAT-solver restart precondition
+is half-present. Run COSTS are heavy-tailed (A4), but OUTCOMES are nearly
+deterministic per instance — easy instances solve every rep, hard ones never
+(3/25 instances show any rep-to-rep outcome variance). Re-rolling failures
+re-fails; capping truncates expensive solves. The run-to-run variance lives
+in cost, not success, and no restart policy harvests cost-variance without
+outcome-variance. The same fact kills cheap-first cascades: Haiku's solve
+set ≈ subset of Opus's (campaign 1), so a Haiku pre-attempt is a pure tax.
+
+Third $0 screen of the campaign (after F6 and the corpus-mined stop rules):
+the sequential-structure family (restarts, retries, pass@k budgeting,
+cascades) is closed on this distribution without a live run.
+
 ### F14 — Held-out generalization: the shipped effect REPLICATES (n=24 paired)
 
 Per PREREG_HOLDOUT.md (locked pre-data with the disjoint subset): 25
