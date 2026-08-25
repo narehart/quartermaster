@@ -299,6 +299,29 @@ cache-priced, quality-gated measurement on fresh SWE tasks.
 early-stopping of doomed trajectories, recon batching (parallel tool calls),
 anti-re-exploration scaffolding — measured on this same rig.
 
+### F18 — Determinism is CONFIG-conditional: diversity is a quality lever, not a cost lever ($0)
+
+Cross-config solve-set analysis over 11 same-subset arms (~275 runs, $0 new
+spend): best single config solves 7/25, but the UNION across configs solves
+**10/25** (+43%) — e.g. pgmpy-2314 was solved by four different configs
+while tuned went 0-for-3 on it. **F15's outcome-determinism is conditional
+on configuration**: same-config restarts re-fail, but a different config is
+a genuinely new draw.
+
+Portfolio simulation (tuned-first, different-config-on-fail): resolve rate
+rises 5/25 → 7–8/25 (up to +60% relative) but cost/solved WORSENS
+($2.46 → $2.72–3.36) — the second config is paid on all ~20 failures to
+harvest 1–2 marginal solves. **Config diversity buys resolve-rate, not
+cost-efficiency.** Relevant to coverage-optimizers (same-config pass@k is
+useless on this distribution); not a ship for the cost mission. Caveats:
+secondary arms are n=1 per config (SDV-2658 is the known flaky); the
+multi-config pgmpy signal is the credible core.
+
+Also measured and corrected in-session: Edit-tool old_string re-quotes are
+4.4% of output tokens (~1–2% of cost) — a formatting footnote, not a lever.
+(An initial 46% figure was a streaming-usage measurement artifact, caught by
+cross-check before entering this record.)
+
 ### F16/F17 — Budget visibility: an apparent floor-break caught and killed by isolation
 
 **F16 (opus-budget, n=25):** certified block + $1.00 budget declaration + a
