@@ -1,5 +1,5 @@
 ruff==0.16.6
-pyright==1.1.411
+pyright==1.1.414
 pytest==9.1.1
 pytest-cov==7.1.0
 commitizen==4.18.0
